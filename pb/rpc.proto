@@ -1,0 +1,12 @@
+syntax = "proto2";
+
+package pubsub.pb;
+
+message RPC {
+	repeated SubOpts subscriptions = 1;
+
+	message SubOpts {
+		optional bool subscribe = 1; // subscribe or unsubcribe
+		optional string topicid = 2;
+	}
+}
