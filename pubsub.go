@@ -3,6 +3,8 @@ package cat
 import (
 	"context"
 
+	pb "github.com/ppopth/go-libp2p-cat/pb"
+
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
 )
@@ -12,8 +14,9 @@ type Option func(*PubSub) error
 // NewPubSub returns a new PubSub management object.
 func NewPubSub(ctx context.Context, rt PubSubRouter, opts ...Option) (*PubSub, error) {
 	ps := &PubSub{
-		rt:     rt,
-		topics: make(map[string]map[peer.ID]struct{}),
+		rt:       rt,
+		incoming: make(chan *RPC, 32),
+		topics:   make(map[string]map[peer.ID]struct{}),
 	}
 
 	for _, opt := range opts {
@@ -25,12 +28,37 @@ func NewPubSub(ctx context.Context, rt PubSubRouter, opts ...Option) (*PubSub, e
 
 	rt.Attach(ps)
 
+	go ps.processLoop(ctx)
+
 	return ps, nil
+}
+
+// processLoop handles all inputs arriving on the channels
+func (p *PubSub) processLoop(ctx context.Context) {
+	defer func() {
+		// Clean up go routines.
+		p.topics = nil
+	}()
+
+	for {
+		select {
+		case rpc := <-p.incoming:
+			p.handleIncomingRPC(rpc)
+		}
+	}
+}
+
+func (p *PubSub) handleIncomingRPC(rpc *RPC) {
+	// TODO
 }
 
 // PubSub is the implementation of the pubsub system.
 type PubSub struct {
 	rt PubSubRouter
+
+	// incoming messages from other peers
+	incoming chan *RPC
+
 	// topics tracks which topics each of our peers are subscribed to
 	topics map[string]map[peer.ID]struct{}
 }
@@ -57,4 +85,11 @@ type PubSubRouter interface {
 }
 
 type Message struct {
+}
+
+type RPC struct {
+	pb.RPC
+
+	// unexported on purpose, not sending this over the wire
+	from peer.ID
 }
