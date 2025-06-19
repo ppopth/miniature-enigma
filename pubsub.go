@@ -49,7 +49,32 @@ func (p *PubSub) processLoop(ctx context.Context) {
 }
 
 func (p *PubSub) handleIncomingRPC(rpc *RPC) {
-	// TODO
+	subs := rpc.GetSubscriptions()
+
+	for _, subopt := range subs {
+		t := subopt.GetTopicid()
+
+		if subopt.GetSubscribe() {
+			tmap, ok := p.topics[t]
+			if !ok {
+				tmap = make(map[peer.ID]struct{})
+				p.topics[t] = tmap
+			}
+
+			if _, ok = tmap[rpc.from]; !ok {
+				tmap[rpc.from] = struct{}{}
+			}
+		} else {
+			tmap, ok := p.topics[t]
+			if !ok {
+				continue
+			}
+
+			if _, ok := tmap[rpc.from]; ok {
+				delete(tmap, rpc.from)
+			}
+		}
+	}
 }
 
 // PubSub is the implementation of the pubsub system.

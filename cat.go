@@ -5,11 +5,15 @@ import (
 
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
+
+	logging "github.com/ipfs/go-log/v2"
 )
 
 const (
 	CatID = protocol.ID("/cat/1.0.0")
 )
+
+var log = logging.Logger("cat")
 
 // NewCat returns a new PubSub object using the CatRouter.
 func NewCat(ctx context.Context, opts ...Option) (*PubSub, error) {
