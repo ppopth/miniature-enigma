@@ -16,11 +16,11 @@ const (
 var log = logging.Logger("cat")
 
 // NewCat returns a new PubSub object using the CatRouter.
-func NewCat(ctx context.Context, opts ...Option) (*PubSub, error) {
+func NewCat(ctx context.Context, h *Host, opts ...Option) (*PubSub, error) {
 	rt := &CatRouter{
 		protocols: []protocol.ID{CatID},
 	}
-	return NewPubSub(ctx, rt, opts...)
+	return NewPubSub(ctx, h, rt, opts...)
 }
 
 func (c *CatRouter) Protocols() []protocol.ID {

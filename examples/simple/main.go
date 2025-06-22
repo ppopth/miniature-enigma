@@ -29,6 +29,18 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	ps, err := cat.NewCat(ctx, h)
+	if err != nil {
+		panic(err)
+	}
+	topic, err := ps.Join("mytopic")
+	if err != nil {
+		panic(err)
+	}
+	sub, err := topic.Subscribe()
+	if err != nil {
+		panic(err)
+	}
 
 	if *connectFlag != "" {
 		addr, err := net.ResolveUDPAddr("udp", *connectFlag)
@@ -41,7 +53,7 @@ func main() {
 	}
 
 	// TODO
-	_ = h
+	_ = sub
 	for {
 	}
 }

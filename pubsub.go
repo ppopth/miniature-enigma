@@ -2,7 +2,10 @@ package cat
 
 import (
 	"context"
+	"fmt"
+	"sync"
 
+	"github.com/gogo/protobuf/proto"
 	pb "github.com/ppopth/go-libp2p-cat/pb"
 
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -12,11 +15,14 @@ import (
 type Option func(*PubSub) error
 
 // NewPubSub returns a new PubSub management object.
-func NewPubSub(ctx context.Context, rt PubSubRouter, opts ...Option) (*PubSub, error) {
+func NewPubSub(ctx context.Context, h *Host, rt PubSubRouter, opts ...Option) (*PubSub, error) {
 	ps := &PubSub{
+		ctx:      ctx,
+		host:     h,
 		rt:       rt,
-		incoming: make(chan *RPC, 32),
 		topics:   make(map[string]map[peer.ID]struct{}),
+		myTopics: make(map[string]*Topic),
+		mySubs:   make(map[string]struct{}),
 	}
 
 	for _, opt := range opts {
@@ -28,27 +34,110 @@ func NewPubSub(ctx context.Context, rt PubSubRouter, opts ...Option) (*PubSub, e
 
 	rt.Attach(ps)
 
-	go ps.processLoop(ctx)
+	h.SetPeerHandlers(ps.handleAddPeer, ps.handleRemovePeer)
 
 	return ps, nil
 }
 
-// processLoop handles all inputs arriving on the channels
-func (p *PubSub) processLoop(ctx context.Context) {
-	defer func() {
-		// Clean up go routines.
-		p.topics = nil
-	}()
+// Join joins the topic and returns a Topic handle. Only one Topic handle should exist per topic, and Join will error if
+// the Topic handle already exists.
+func (p *PubSub) Join(topic string) (*Topic, error) {
+	p.lk.Lock()
+	defer p.lk.Unlock()
 
-	for {
-		select {
-		case rpc := <-p.incoming:
-			p.handleIncomingRPC(rpc)
+	_, ok := p.myTopics[topic]
+	if ok {
+		return nil, fmt.Errorf("topic already exists")
+	}
+	t := newTopic(p, topic)
+	p.myTopics[topic] = t
+
+	t.AddEventListener(func(ev TopicEvent) {
+		p.handleTopicEvent(topic, ev)
+	})
+	return t, nil
+}
+
+// sendHelloPacket sends the initial RPC containing all of our subscriptions to send to new peers
+func (p *PubSub) sendHelloPacket(conn DgramConnection) {
+	var rpc pb.RPC
+
+	subscriptions := make(map[string]bool)
+
+	p.lk.Lock()
+	for t := range p.mySubs {
+		subscriptions[t] = true
+	}
+	p.lk.Unlock()
+
+	for t := range subscriptions {
+		as := &pb.RPC_SubOpts{
+			Topicid:   proto.String(t),
+			Subscribe: proto.Bool(true),
 		}
+		rpc.Subscriptions = append(rpc.Subscriptions, as)
+	}
+
+	p.sendPacket(&rpc, conn)
+}
+
+// sendPacket sends an RPC to the datagram connection
+func (p *PubSub) sendPacket(rpc *pb.RPC, conn DgramConnection) {
+	log.Debugf("sent an RPC to %s: %v", conn.RemoteAddr(), rpc)
+
+	buf, err := rpc.Marshal()
+	if err != nil {
+		log.Errorf("error marshalling an RPC: %v", err)
+		return
+	}
+
+	if err := conn.SendDatagram(buf); err != nil {
+		log.Errorf("error sending an RPC to %s: %v", conn.RemoteAddr(), err)
+		return
 	}
 }
 
-func (p *PubSub) handleIncomingRPC(rpc *RPC) {
+func (p *PubSub) handleAddPeer(pid peer.ID, conn DgramConnection) {
+	// Event loop to read messages from the connections
+	go func() {
+		for {
+			msgbytes, err := conn.ReceiveDatagram(p.ctx)
+			if err != nil {
+				// Quietly return
+				return
+			}
+
+			rpc := &pb.RPC{}
+			err = rpc.Unmarshal(msgbytes)
+			if err != nil {
+				log.Warnf("invalid datagram received: %v", err)
+				continue
+			}
+			p.handleIncomingRPC(pid, rpc)
+		}
+	}()
+
+	// Send the initial packet for a new connection
+	p.sendHelloPacket(conn)
+}
+func (p *PubSub) handleRemovePeer(pid peer.ID) {
+}
+
+func (p *PubSub) handleTopicEvent(topic string, ev TopicEvent) {
+	p.lk.Lock()
+	defer p.lk.Unlock()
+
+	switch ev {
+	case TopicEventSubscribe:
+		p.mySubs[topic] = struct{}{}
+	case TopicEventUnsubscribe:
+		delete(p.mySubs, topic)
+	}
+}
+
+// handleIncomingRPC handles all the received RPCs
+func (p *PubSub) handleIncomingRPC(from peer.ID, rpc *pb.RPC) {
+	log.Debugf("received an RPC from %s: %v", from, rpc)
 	subs := rpc.GetSubscriptions()
 
 	for _, subopt := range subs {
@@ -61,8 +150,8 @@ func (p *PubSub) handleIncomingRPC(rpc *RPC) {
 				p.topics[t] = tmap
 			}
 
-			if _, ok = tmap[rpc.from]; !ok {
-				tmap[rpc.from] = struct{}{}
+			if _, ok = tmap[from]; !ok {
+				tmap[from] = struct{}{}
 			}
 		} else {
 			tmap, ok := p.topics[t]
@@ -70,8 +159,8 @@ func (p *PubSub) handleIncomingRPC(rpc *RPC) {
 				continue
 			}
 
-			if _, ok := tmap[rpc.from]; ok {
-				delete(tmap, rpc.from)
+			if _, ok := tmap[from]; ok {
+				delete(tmap, from)
 			}
 		}
 	}
@@ -79,13 +168,18 @@ func (p *PubSub) handleIncomingRPC(rpc *RPC) {
 
 // PubSub is the implementation of the pubsub system.
 type PubSub struct {
-	rt PubSubRouter
+	ctx context.Context
+	lk  sync.Mutex
 
-	// incoming messages from other peers
-	incoming chan *RPC
+	host *Host
+	rt   PubSubRouter
 
 	// topics tracks which topics each of our peers are subscribed to
 	topics map[string]map[peer.ID]struct{}
+	// the set of topics we are interested in
+	myTopics map[string]*Topic
+	// the set of topics we are subscribed to
+	mySubs map[string]struct{}
 }
 
 // PubSubRouter is the message router component of PubSub.
@@ -110,11 +204,4 @@ type PubSubRouter interface {
 }
 
 type Message struct {
-}
-
-type RPC struct {
-	pb.RPC
-
-	// unexported on purpose, not sending this over the wire
-	from peer.ID
 }

@@ -31,7 +31,8 @@ type HostOption func(*Host) error
 // NewHost returns a new Host object.
 func NewHost(ctx context.Context, opts ...HostOption) (*Host, error) {
 	h := &Host{
-		ep: net.UDPAddrFromAddrPort(netip.AddrPortFrom(netip.IPv4Unspecified(), DefaultPort)),
+		ep:    net.UDPAddrFromAddrPort(netip.AddrPortFrom(netip.IPv4Unspecified(), DefaultPort)),
+		peers: make(map[peer.ID]quic.Connection),
 	}
 
 	for _, opt := range opts {
@@ -71,7 +72,10 @@ func NewHost(ctx context.Context, opts ...HostOption) (*Host, error) {
 		Certificates: []tls.Certificate{*h.crt},
 		ClientAuth:   tls.RequireAnyClientCert,
 	}
-	h.ln, err = h.tr.Listen(tlsConfig, &quic.Config{})
+	quicConfig := &quic.Config{
+		EnableDatagrams: true,
+	}
+	h.ln, err = h.tr.Listen(tlsConfig, quicConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -86,21 +90,19 @@ func (h *Host) Connect(ctx context.Context, addr net.Addr) error {
 		Certificates:       []tls.Certificate{*h.crt}, // Put a certificate to do client authentication
 		InsecureSkipVerify: true,                      // TODO: Verify the certifcate properly when it's implemented
 	}
-	conn, err := h.tr.Dial(ctx, addr, tlsConfig, &quic.Config{})
+	quicConfig := &quic.Config{
+		EnableDatagrams: true,
+	}
+	conn, err := h.tr.Dial(ctx, addr, tlsConfig, quicConfig)
 	if err != nil {
 		return err
 	}
 
-	// Derive the peer id from the certificate
-	peerCrt := conn.ConnectionState().TLS.PeerCertificates[0]
-	pid, err := parsePeerIDFromCerticate(peerCrt)
+	p, err := h.handleConnection(conn)
 	if err != nil {
-		return fmt.Errorf("failed parsing for a peer ID from the TLS certificate: %v", err)
+		return err
 	}
-
-	log.Infof("connected to %s at %s", pid, addr)
-
-	go h.handler(pid, conn)
+	log.Infof("connected to %s at %s", p, addr)
 	return nil
 }
 
@@ -112,15 +114,62 @@ type DgramConnection interface {
 	RemoteAddr() net.Addr
 }
 
-// TODO: The connection handler is supposed to be able to handle any type of connection, but
-// we support only a datagram connection for now.
-type ConnectionHandler func(peer.ID, DgramConnection)
+// TODO: The handlers are supposed to be able to handle any type of connection, but we
+// support only a datagram connection for now.
+type AddPeerHandler func(peer.ID, DgramConnection)
+type RemovePeerHandler func(peer.ID)
 
-func (h *Host) SetConnectionHandler(handler ConnectionHandler) {
-	h.handlerLk.Lock()
-	defer h.handlerLk.Unlock()
+func (h *Host) SetPeerHandlers(addHandler AddPeerHandler, removeHandler RemovePeerHandler) {
+	h.lk.Lock()
+	defer h.lk.Unlock()
 
-	h.handler = handler
+	h.addHandler = addHandler
+	h.removeHandler = removeHandler
+
+	// Retrospectively add all exiting peers
+	for p, conn := range h.peers {
+		h.addHandler(p, conn)
+	}
+}
+
+// handleConnection handles the connection regardless of whether it's incoming or outgoing
+func (h *Host) handleConnection(conn quic.Connection) (peer.ID, error) {
+	// Validate the connection
+
+	// Derive the peer id from the certificate
+	peerCrt := conn.ConnectionState().TLS.PeerCertificates[0]
+	p, err := parsePeerIDFromCerticate(peerCrt)
+	if err != nil {
+		return "", fmt.Errorf("failed parsing for a peer ID from the TLS certificate: %v", err)
+	}
+
+	// Lock to read/write the peer set
+	h.lk.Lock()
+	defer h.lk.Unlock()
+
+	// Check if there is already an onging connection with the peer
+	if _, ok := h.peers[p]; ok {
+		return "", fmt.Errorf("there is already an ongoing connection with peer %s", p)
+	}
+
+	// The connection is valid
+	h.peers[p] = conn
+	if h.addHandler != nil {
+		h.addHandler(p, conn)
+	}
+
+	go func() {
+		// Wait until the connection is closed and then remove the peer
+		<-conn.Context().Done()
+
+		h.lk.Lock()
+		delete(h.peers, p)
+		if h.removeHandler != nil {
+			h.removeHandler(p)
+		}
+		h.lk.Unlock()
+	}()
+	return p, nil
 }
 
 // processLoop handles all incoming connections
@@ -136,17 +185,14 @@ func (h *Host) processLoop(ctx context.Context) {
 			return
 		}
 
-		// Derive the peer id from the certificate
-		peerCrt := conn.ConnectionState().TLS.PeerCertificates[0]
-		pid, err := parsePeerIDFromCerticate(peerCrt)
+		p, err := h.handleConnection(conn)
 		if err != nil {
-			log.Warnf("failed parsing for a peer ID from the TLS certificate: %v", err)
+			log.Warnf("incoming connection is invalid: %v", err)
+			// Close the connection. The error code is always 0 for now
+			conn.CloseWithError(0, err.Error())
 			continue
 		}
-
-		log.Infof("accepted a connection from %s at %s", pid, conn.RemoteAddr())
-
-		go h.handler(pid, conn)
+		log.Infof("accepted a connection from %s at %s", p, conn.RemoteAddr())
 	}
 }
 
@@ -186,6 +232,10 @@ func WithIdentity(sk crypto.PrivateKey) HostOption {
 }
 
 type Host struct {
+	lk sync.Mutex
+
+	peers map[peer.ID]quic.Connection
+
 	crt *tls.Certificate
 	ep  *net.UDPAddr
 	pid peer.ID
@@ -194,8 +244,8 @@ type Host struct {
 	tr *quic.Transport
 	ln *quic.Listener
 
-	handlerLk sync.RWMutex
-	handler   ConnectionHandler
+	addHandler    AddPeerHandler
+	removeHandler RemovePeerHandler
 }
 
 // createTLSCertFromKey creates a self-signed certificate from a private key
