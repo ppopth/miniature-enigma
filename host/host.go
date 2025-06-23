@@ -32,8 +32,13 @@ const (
 type HostOption func(*Host) error
 
 // NewHost returns a new Host object.
-func NewHost(ctx context.Context, opts ...HostOption) (*Host, error) {
+func NewHost(opts ...HostOption) (*Host, error) {
+	ctx, cancel := context.WithCancel(context.Background())
+
 	h := &Host{
+		ctx:    ctx,
+		cancel: cancel,
+
 		ep:    net.UDPAddrFromAddrPort(netip.AddrPortFrom(netip.IPv4Unspecified(), DefaultPort)),
 		peers: make(map[peer.ID]quic.Connection),
 	}
@@ -83,12 +88,25 @@ func NewHost(ctx context.Context, opts ...HostOption) (*Host, error) {
 		return nil, err
 	}
 
-	go h.processLoop(ctx)
+	h.wg.Add(1)
+	go h.processLoop()
 
 	return h, nil
 }
 
 func (h *Host) Connect(ctx context.Context, addr net.Addr) error {
+	orCtx, cancel := context.WithCancel(context.Background())
+	h.wg.Add(1)
+	go func() {
+		defer h.wg.Done()
+		defer cancel()
+
+		select {
+		case <-h.ctx.Done():
+		case <-ctx.Done():
+		}
+	}()
+
 	tlsConfig := &tls.Config{
 		Certificates:       []tls.Certificate{*h.crt}, // Put a certificate to do client authentication
 		InsecureSkipVerify: true,                      // TODO: Verify the certifcate properly when it's implemented
@@ -96,7 +114,7 @@ func (h *Host) Connect(ctx context.Context, addr net.Addr) error {
 	quicConfig := &quic.Config{
 		EnableDatagrams: true,
 	}
-	conn, err := h.tr.Dial(ctx, addr, tlsConfig, quicConfig)
+	conn, err := h.tr.Dial(orCtx, addr, tlsConfig, quicConfig)
 	if err != nil {
 		return err
 	}
@@ -115,6 +133,15 @@ func (h *Host) LocalAddr() net.Addr {
 
 func (h *Host) ID() peer.ID {
 	return h.pid
+}
+
+func (h *Host) Close() error {
+	if err := h.tr.Close(); err != nil {
+		return err
+	}
+	h.cancel()
+	h.wg.Wait()
+	return nil
 }
 
 type DgramConnection interface {
@@ -169,7 +196,9 @@ func (h *Host) handleConnection(conn quic.Connection) (peer.ID, error) {
 		h.addHandler(p, conn)
 	}
 
+	h.wg.Add(1)
 	go func() {
+		defer h.wg.Done()
 		// Wait until the connection is closed and then remove the peer
 		<-conn.Context().Done()
 
@@ -184,12 +213,14 @@ func (h *Host) handleConnection(conn quic.Connection) (peer.ID, error) {
 }
 
 // processLoop handles all incoming connections
-func (h *Host) processLoop(ctx context.Context) {
+func (h *Host) processLoop() {
+	defer h.wg.Done()
+
 	log.Infof("listening for incoming connections at %s", h.ep)
 	log.Infof("my peer id is %s", h.pid)
 
 	for {
-		conn, err := h.ln.Accept(ctx)
+		conn, err := h.ln.Accept(h.ctx)
 		if err != nil {
 			// If there is an error, it probably means the context has been cancelled
 			log.Warnf("quic-go listener returned an error in the Host processLoop: %v", err)
@@ -243,6 +274,10 @@ func WithIdentity(sk crypto.PrivateKey) HostOption {
 }
 
 type Host struct {
+	ctx    context.Context
+	cancel context.CancelFunc
+	wg     sync.WaitGroup
+
 	lk sync.Mutex
 
 	peers map[peer.ID]quic.Connection

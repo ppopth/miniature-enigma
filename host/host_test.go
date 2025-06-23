@@ -48,9 +48,8 @@ func TestUniqueConnection(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx := context.Background()
 	// Server host
-	s, err := NewHost(ctx,
+	s, err := NewHost(
 		WithAddrPort(netip.MustParseAddrPort("127.0.0.1:0")),
 	)
 	if err != nil {
@@ -58,14 +57,14 @@ func TestUniqueConnection(t *testing.T) {
 	}
 
 	// Two client hosts
-	h1, err := NewHost(ctx,
+	h1, err := NewHost(
 		WithAddrPort(netip.MustParseAddrPort("127.0.0.1:0")),
 		WithIdentity(sk),
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	h2, err := NewHost(ctx,
+	h2, err := NewHost(
 		WithAddrPort(netip.MustParseAddrPort("127.0.0.1:0")),
 		WithIdentity(sk),
 	)
@@ -75,13 +74,13 @@ func TestUniqueConnection(t *testing.T) {
 
 	// First client connects first and then the second one
 	addr := s.LocalAddr()
-	if err := h1.Connect(ctx, addr); err != nil {
+	if err := h1.Connect(context.Background(), addr); err != nil {
 		t.Fatal(err)
 	}
 	// Wait for a bit before let the second connect
 	time.Sleep(50 * time.Millisecond)
 	// Second client connects
-	if err := h2.Connect(ctx, addr); err != nil {
+	if err := h2.Connect(context.Background(), addr); err != nil {
 		t.Fatal(err)
 	}
 
@@ -94,28 +93,31 @@ func TestUniqueConnection(t *testing.T) {
 	if len(h2.peers) != 0 {
 		t.Fatal("the second client did connect successfully")
 	}
+
+	s.Close()
+	h1.Close()
+	h2.Close()
 }
 
 func TestHandlers(t *testing.T) {
-	ctx := context.Background()
 	// Server host
-	s, err := NewHost(ctx, WithAddrPort(netip.MustParseAddrPort("127.0.0.1:0")))
+	s, err := NewHost(WithAddrPort(netip.MustParseAddrPort("127.0.0.1:0")))
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Two client hosts
-	h1, err := NewHost(ctx, WithAddrPort(netip.MustParseAddrPort("127.0.0.1:0")))
+	h1, err := NewHost(WithAddrPort(netip.MustParseAddrPort("127.0.0.1:0")))
 	if err != nil {
 		t.Fatal(err)
 	}
-	h2, err := NewHost(ctx, WithAddrPort(netip.MustParseAddrPort("127.0.0.1:0")))
+	h2, err := NewHost(WithAddrPort(netip.MustParseAddrPort("127.0.0.1:0")))
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	addr := s.LocalAddr()
-	if err := h1.Connect(ctx, addr); err != nil {
+	if err := h1.Connect(context.Background(), addr); err != nil {
 		t.Fatal(err)
 	}
 	time.Sleep(50 * time.Millisecond)
@@ -151,7 +153,7 @@ func TestHandlers(t *testing.T) {
 	removed = make(map[peer.ID]struct{})
 
 	time.Sleep(50 * time.Millisecond)
-	if err := h2.Connect(ctx, addr); err != nil {
+	if err := h2.Connect(context.Background(), addr); err != nil {
 		t.Fatal(err)
 	}
 	time.Sleep(50 * time.Millisecond)
@@ -175,4 +177,25 @@ func TestHandlers(t *testing.T) {
 	if !maps.Equal(removed, h12map) {
 		t.Fatalf("the set of removed peers is incorrect got %v expected %v", removed, h12map)
 	}
+
+	s.Close()
+	h1.Close()
+	h2.Close()
+}
+
+func TestClose(t *testing.T) {
+	h1, err := NewHost(WithAddrPort(netip.MustParseAddrPort("127.0.0.1:0")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	h2, err := NewHost(WithAddrPort(netip.MustParseAddrPort("127.0.0.1:0")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := h1.Connect(context.Background(), h2.LocalAddr()); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(50 * time.Millisecond)
+	h1.Close()
+	h2.Close()
 }
