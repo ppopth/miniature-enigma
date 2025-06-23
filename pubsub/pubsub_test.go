@@ -10,21 +10,20 @@ import (
 )
 
 func TestHelloPacket(t *testing.T) {
-	ctx := context.Background()
-	h1, err := host.NewHost(ctx, host.WithAddrPort(netip.MustParseAddrPort("127.0.0.1:0")))
+	h1, err := host.NewHost(host.WithAddrPort(netip.MustParseAddrPort("127.0.0.1:0")))
 	if err != nil {
 		panic(err)
 	}
-	p1, err := NewPubSub(ctx, h1)
+	p1, err := NewPubSub(h1)
 	if err != nil {
 		panic(err)
 	}
 
-	h2, err := host.NewHost(ctx, host.WithAddrPort(netip.MustParseAddrPort("127.0.0.1:0")))
+	h2, err := host.NewHost(host.WithAddrPort(netip.MustParseAddrPort("127.0.0.1:0")))
 	if err != nil {
 		panic(err)
 	}
-	p2, err := NewPubSub(ctx, h2)
+	p2, err := NewPubSub(h2)
 	if err != nil {
 		panic(err)
 	}
@@ -41,7 +40,7 @@ func TestHelloPacket(t *testing.T) {
 	}
 
 	addr := h1.LocalAddr()
-	if err := h2.Connect(ctx, addr); err != nil {
+	if err := h2.Connect(context.Background(), addr); err != nil {
 		t.Fatal(err)
 	}
 	time.Sleep(50 * time.Millisecond)
@@ -57,15 +56,20 @@ func TestHelloPacket(t *testing.T) {
 			t.Fatalf("pid %s not found in p1.topics", h2.ID())
 		}
 	}
+
+	p1.Close()
+	p2.Close()
+
+	h1.Close()
+	h2.Close()
 }
 
 func TestJoinAlreadyJoinedTopic(t *testing.T) {
-	ctx := context.Background()
-	h, err := host.NewHost(ctx, host.WithAddrPort(netip.MustParseAddrPort("127.0.0.1:0")))
+	h, err := host.NewHost(host.WithAddrPort(netip.MustParseAddrPort("127.0.0.1:0")))
 	if err != nil {
 		panic(err)
 	}
-	p, err := NewPubSub(ctx, h)
+	p, err := NewPubSub(h)
 	if err != nil {
 		panic(err)
 	}
@@ -77,4 +81,55 @@ func TestJoinAlreadyJoinedTopic(t *testing.T) {
 	if err == nil {
 		t.Fatal("should get an error when join an already joined topic")
 	}
+
+	p.Close()
+	h.Close()
+}
+
+func TestClose(t *testing.T) {
+	h1, err := host.NewHost(host.WithAddrPort(netip.MustParseAddrPort("127.0.0.1:0")))
+	if err != nil {
+		panic(err)
+	}
+	p1, err := NewPubSub(h1)
+	if err != nil {
+		panic(err)
+	}
+
+	// Close PubSub before Host
+	p1.Close()
+	h1.Close()
+
+	h2, err := host.NewHost(host.WithAddrPort(netip.MustParseAddrPort("127.0.0.1:0")))
+	if err != nil {
+		panic(err)
+	}
+	p2, err := NewPubSub(h2)
+	if err != nil {
+		panic(err)
+	}
+
+	// Close Host before PubSub
+	h2.Close()
+	p2.Close()
+}
+
+func TestJoinOnClosed(t *testing.T) {
+	h, err := host.NewHost(host.WithAddrPort(netip.MustParseAddrPort("127.0.0.1:0")))
+	if err != nil {
+		panic(err)
+	}
+	p, err := NewPubSub(h)
+	if err != nil {
+		panic(err)
+	}
+
+	p.Close()
+
+	_, err = p.Join("foo")
+	if err == nil {
+		t.Fatal("expected error when join on a closed pubsub")
+	}
+
+	h.Close()
 }

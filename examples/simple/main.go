@@ -25,12 +25,11 @@ func main() {
 		))
 	}
 
-	ctx := context.Background()
-	h, err := host.NewHost(ctx, opts...)
+	h, err := host.NewHost(opts...)
 	if err != nil {
 		panic(err)
 	}
-	ps, err := pubsub.NewPubSub(ctx, h)
+	ps, err := pubsub.NewPubSub(h)
 	if err != nil {
 		panic(err)
 	}
@@ -38,7 +37,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	sub, err := topic.Subscribe()
+	_, err = topic.Subscribe()
 	if err != nil {
 		panic(err)
 	}
@@ -48,13 +47,11 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
-		if err = h.Connect(ctx, addr); err != nil {
+		if err = h.Connect(context.Background(), addr); err != nil {
 			panic(err)
 		}
 	}
 
-	// TODO
-	_ = sub
 	for {
 	}
 }

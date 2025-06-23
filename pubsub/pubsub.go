@@ -18,9 +18,13 @@ var log = logging.Logger("pubsub")
 type Option func(*PubSub) error
 
 // NewPubSub returns a new PubSub management object.
-func NewPubSub(ctx context.Context, h *host.Host, opts ...Option) (*PubSub, error) {
+func NewPubSub(h *host.Host, opts ...Option) (*PubSub, error) {
+	ctx, cancel := context.WithCancel(context.Background())
+
 	ps := &PubSub{
-		ctx:      ctx,
+		ctx:    ctx,
+		cancel: cancel,
+
 		host:     h,
 		peers:    make(map[peer.ID]host.DgramConnection),
 		topics:   make(map[string]map[peer.ID]struct{}),
@@ -46,11 +50,17 @@ func (p *PubSub) Join(topic string) (*Topic, error) {
 	p.lk.Lock()
 	defer p.lk.Unlock()
 
+	select {
+	case <-p.ctx.Done():
+		return nil, fmt.Errorf("the pubsub has been closed")
+	default:
+	}
+
 	_, ok := p.myTopics[topic]
 	if ok {
 		return nil, fmt.Errorf("topic already exists")
 	}
-	t := newTopic(p, topic)
+	t := newTopic(topic)
 	p.myTopics[topic] = t
 
 	t.AddEventListener(func(ev TopicEvent) {
@@ -61,6 +71,15 @@ func (p *PubSub) Join(topic string) (*Topic, error) {
 		t.addPeer(pid, p.peers[pid])
 	}
 	return t, nil
+}
+
+func (p *PubSub) Close() error {
+	for _, t := range p.myTopics {
+		t.Close()
+	}
+	p.cancel()
+	p.wg.Wait()
+	return nil
 }
 
 // sendHelloPacket sends the initial RPC containing all of our subscriptions to send to new peers
@@ -104,7 +123,9 @@ func (p *PubSub) sendPacket(rpc *pb.RPC, conn host.DgramConnection) {
 
 func (p *PubSub) handleAddPeer(pid peer.ID, conn host.DgramConnection) {
 	// Event loop to read messages from the connections
+	p.wg.Add(1)
 	go func() {
+		defer p.wg.Done()
 		for {
 			msgbytes, err := conn.ReceiveDatagram(p.ctx)
 			if err != nil {
@@ -170,7 +191,7 @@ func (p *PubSub) handleIncomingRPC(from peer.ID, rpc *pb.RPC) {
 
 func (p *PubSub) handleSubscriptions(from peer.ID, subs []*pb.RPC_SubOpts) {
 	p.lk.Lock()
-	defer p.lk.Lock()
+	defer p.lk.Unlock()
 	for _, subopt := range subs {
 		topic := subopt.GetTopicid()
 
@@ -205,8 +226,11 @@ func (p *PubSub) handleSubscriptions(from peer.ID, subs []*pb.RPC_SubOpts) {
 
 // PubSub is the implementation of the pubsub system.
 type PubSub struct {
-	ctx context.Context
-	lk  sync.Mutex
+	ctx    context.Context
+	cancel context.CancelFunc
+	wg     sync.WaitGroup
+
+	lk sync.Mutex
 
 	host *host.Host
 

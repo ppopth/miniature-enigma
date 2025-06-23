@@ -1,6 +1,8 @@
 package pubsub
 
 import (
+	"context"
+	"fmt"
 	"sync"
 
 	"github.com/ppopth/go-libp2p-cat/host"
@@ -10,9 +12,12 @@ import (
 
 // Topic is the handle for a pubsub topic
 type Topic struct {
+	ctx    context.Context
+	cancel context.CancelFunc
+	wg     sync.WaitGroup
+
 	lk sync.Mutex
 
-	p     *PubSub
 	topic string
 
 	// the set of subscriptions this topic has
@@ -21,9 +26,12 @@ type Topic struct {
 	lns    []TopicEventListener
 }
 
-func newTopic(p *PubSub, topic string) *Topic {
+func newTopic(topic string) *Topic {
+	ctx, cancel := context.WithCancel(context.Background())
 	return &Topic{
-		p:      p,
+		ctx:    ctx,
+		cancel: cancel,
+
 		topic:  topic,
 		mySubs: make(map[*Subscription]struct{}),
 		peers:  make(map[peer.ID]host.DgramConnection),
@@ -35,8 +43,20 @@ func (t *Topic) String() string {
 	return t.topic
 }
 
+func (t *Topic) Close() error {
+	t.cancel()
+	t.wg.Wait()
+	return nil
+}
+
 // Subscribe subscribes the topic and returns a Subscription object.
 func (t *Topic) Subscribe() (*Subscription, error) {
+	select {
+	case <-t.ctx.Done():
+		return nil, fmt.Errorf("the topic has been closed")
+	default:
+	}
+
 	sub := &Subscription{t: t}
 
 	t.lk.Lock()
@@ -67,6 +87,12 @@ func (t *Topic) AddEventListener(ln TopicEventListener) {
 
 // SATETY: Assume that the lock has been acquired keep to the set of listeners static
 func (t *Topic) notifyEvent(ev TopicEvent) {
+	select {
+	case <-t.ctx.Done():
+		return
+	default:
+	}
+
 	for _, ln := range t.lns {
 		ln(ev)
 	}

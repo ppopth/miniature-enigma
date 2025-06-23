@@ -8,7 +8,7 @@ func TestSubscribe(t *testing.T) {
 	var err error
 
 	topic := "foo"
-	tp := newTopic(&PubSub{}, topic)
+	tp := newTopic(topic)
 	if tp.String() != topic {
 		t.Fatalf("unexpected string value of the topic expected: %s actual: %s", topic, tp.String())
 	}
@@ -43,5 +43,24 @@ func TestSubscribe(t *testing.T) {
 	// After the second subscription, we should get no event
 	if ev != nil {
 		t.Fatalf("expected no topic event; found %v", ev)
+	}
+
+	tp.Close()
+}
+
+func TestSubscribeOnClosed(t *testing.T) {
+	var err error
+
+	topic := "foo"
+	tp := newTopic(topic)
+
+	_, err = tp.Subscribe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	tp.Close()
+	_, err = tp.Subscribe()
+	if err == nil {
+		t.Fatal("expected error when subscribe on a closed topic")
 	}
 }
