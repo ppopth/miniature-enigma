@@ -8,7 +8,7 @@ func TestSubscribe(t *testing.T) {
 	var err error
 
 	topic := "foo"
-	tp := newTopic(topic)
+	tp := newTopic(topic, nil)
 	if tp.String() != topic {
 		t.Fatalf("unexpected string value of the topic expected: %s actual: %s", topic, tp.String())
 	}
@@ -52,13 +52,31 @@ func TestSubscribeOnClosed(t *testing.T) {
 	var err error
 
 	topic := "foo"
-	tp := newTopic(topic)
+	tp := newTopic(topic, nil)
+
+	// Add the event listener
+	var ev *TopicEvent
+	listener := func(e TopicEvent) {
+		if ev != nil {
+			t.Fatal("the event listener was called many times")
+		}
+		ev = &e
+	}
+	tp.AddEventListener(listener)
 
 	_, err = tp.Subscribe()
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Reset the event
+	ev = nil
+
 	tp.Close()
+	// After the topic is closed, we should get an event
+	if *ev != TopicEventUnsubscribe {
+		t.Fatalf("expected a topic event TopicEventSubscribe; found %v", ev)
+	}
+
 	_, err = tp.Subscribe()
 	if err == nil {
 		t.Fatal("expected error when subscribe on a closed topic")

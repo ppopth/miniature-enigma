@@ -46,7 +46,7 @@ func NewPubSub(h *host.Host, opts ...Option) (*PubSub, error) {
 
 // Join joins the topic and returns a Topic handle. Only one Topic handle should exist per topic, and Join will error if
 // the Topic handle already exists.
-func (p *PubSub) Join(topic string) (*Topic, error) {
+func (p *PubSub) Join(topic string, rt Router) (*Topic, error) {
 	p.lk.Lock()
 	defer p.lk.Unlock()
 
@@ -60,7 +60,7 @@ func (p *PubSub) Join(topic string) (*Topic, error) {
 	if ok {
 		return nil, fmt.Errorf("topic already exists")
 	}
-	t := newTopic(topic)
+	t := newTopic(topic, rt)
 	p.myTopics[topic] = t
 
 	t.AddEventListener(func(ev TopicEvent) {
@@ -74,16 +74,24 @@ func (p *PubSub) Join(topic string) (*Topic, error) {
 }
 
 func (p *PubSub) Close() error {
+	var myTopics []*Topic
+	// Cancel first to prevent new joined topics
+	p.cancel()
+	// Copy the topics first because we cannot Close with the lock acquired
+	p.lk.Lock()
 	for _, t := range p.myTopics {
+		myTopics = append(myTopics, t)
+	}
+	p.lk.Unlock()
+	for _, t := range myTopics {
 		t.Close()
 	}
-	p.cancel()
 	p.wg.Wait()
 	return nil
 }
 
 // sendHelloPacket sends the initial RPC containing all of our subscriptions to send to new peers
-func (p *PubSub) sendHelloPacket(conn host.Connection) {
+func (p *PubSub) sendHelloPacket(conn host.Sender) {
 	var rpc pb.RPC
 
 	subscriptions := make(map[string]bool)
@@ -102,23 +110,7 @@ func (p *PubSub) sendHelloPacket(conn host.Connection) {
 		rpc.Subscriptions = append(rpc.Subscriptions, as)
 	}
 
-	p.sendPacket(&rpc, conn)
-}
-
-// sendPacket sends an RPC to the datagram connection
-func (p *PubSub) sendPacket(rpc *pb.RPC, conn host.Connection) {
-	log.Debugf("sent an RPC to %s: %v", conn.RemoteAddr(), rpc)
-
-	buf, err := rpc.Marshal()
-	if err != nil {
-		log.Errorf("error marshalling an RPC: %v", err)
-		return
-	}
-
-	if err := conn.Send(buf); err != nil {
-		log.Errorf("error sending an RPC to %s: %v", conn.RemoteAddr(), err)
-		return
-	}
+	sendRPC(&rpc, conn)
 }
 
 func (p *PubSub) handleAddPeer(pid peer.ID, conn host.Connection) {
@@ -136,7 +128,7 @@ func (p *PubSub) handleAddPeer(pid peer.ID, conn host.Connection) {
 			rpc := &pb.RPC{}
 			err = rpc.Unmarshal(msgbytes)
 			if err != nil {
-				log.Warnf("invalid datagram received: %v", err)
+				log.Warnf("invalid packet received: %v", err)
 				continue
 			}
 			p.handleIncomingRPC(pid, rpc)
@@ -171,15 +163,34 @@ func (p *PubSub) handleTopicEvent(topic string, ev TopicEvent) {
 	p.lk.Lock()
 	defer p.lk.Unlock()
 
+	var subscribe bool
+	var isSubscribeEvent bool
+
 	switch ev {
 	case TopicEventSubscribe:
 		p.mySubs[topic] = struct{}{}
+		isSubscribeEvent = true
+		subscribe = true
 	case TopicEventUnsubscribe:
 		delete(p.mySubs, topic)
+		isSubscribeEvent = true
+		subscribe = false
+	}
+
+	if isSubscribeEvent {
+		for _, conn := range p.peers {
+			var rpc pb.RPC
+			as := &pb.RPC_SubOpts{
+				Topicid:   proto.String(topic),
+				Subscribe: proto.Bool(subscribe),
+			}
+			rpc.Subscriptions = append(rpc.Subscriptions, as)
+			sendRPC(&rpc, conn)
+		}
 	}
 }
 
-// handleIncomingRPC handles all the received RPCs
+// handleIncomingRPC handles the received RPC
 func (p *PubSub) handleIncomingRPC(from peer.ID, rpc *pb.RPC) {
 	log.Debugf("received an RPC from %s: %v", from, rpc)
 	subs := rpc.GetSubscriptions()
@@ -187,8 +198,15 @@ func (p *PubSub) handleIncomingRPC(from peer.ID, rpc *pb.RPC) {
 	if len(subs) > 0 {
 		p.handleSubscriptions(from, subs)
 	}
+
+	for _, trpc := range rpc.GetRpcs() {
+		if t, ok := p.myTopics[trpc.GetTopicid()]; ok {
+			t.handleIncomingRPC(from, trpc)
+		}
+	}
 }
 
+// handleSubscriptions handles all the subscription detail in the RPC
 func (p *PubSub) handleSubscriptions(from peer.ID, subs []*pb.RPC_SubOpts) {
 	p.lk.Lock()
 	defer p.lk.Unlock()
@@ -204,6 +222,7 @@ func (p *PubSub) handleSubscriptions(from peer.ID, subs []*pb.RPC_SubOpts) {
 
 			if _, ok = tmap[from]; !ok {
 				tmap[from] = struct{}{}
+				// If the topic is our joined topic, notify the topic about the new peer
 				if t, ok := p.myTopics[topic]; ok {
 					t.addPeer(from, p.peers[from])
 				}
@@ -216,6 +235,7 @@ func (p *PubSub) handleSubscriptions(from peer.ID, subs []*pb.RPC_SubOpts) {
 
 			if _, ok := tmap[from]; ok {
 				delete(tmap, from)
+				// If the topic is our joined topic, notify the topic about the removed peer
 				if t, ok := p.myTopics[topic]; ok {
 					t.removePeer(from)
 				}
@@ -242,4 +262,20 @@ type PubSub struct {
 	myTopics map[string]*Topic
 	// the set of topics we are subscribed to
 	mySubs map[string]struct{}
+}
+
+// sendRPC sends an RPC to the connection
+func sendRPC(rpc *pb.RPC, conn host.Sender) {
+	log.Debugf("sent an RPC to %s: %v", conn.RemoteAddr(), rpc)
+
+	buf, err := rpc.Marshal()
+	if err != nil {
+		log.Errorf("error marshalling an RPC: %v", err)
+		return
+	}
+
+	if err := conn.Send(buf); err != nil {
+		log.Errorf("error sending an RPC to %s: %v", conn.RemoteAddr(), err)
+		return
+	}
 }

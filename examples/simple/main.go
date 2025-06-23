@@ -33,7 +33,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	topic, err := ps.Join("mytopic")
+	topic, err := ps.Join("mytopic", nil)
 	if err != nil {
 		panic(err)
 	}

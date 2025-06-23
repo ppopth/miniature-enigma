@@ -146,16 +146,19 @@ func (h *Host) Close() error {
 
 type Sender interface {
 	Send([]byte) error
+
+	LocalAddr() net.Addr
+	RemoteAddr() net.Addr
 }
 type Receiver interface {
 	Receive(context.Context) ([]byte, error)
+
+	LocalAddr() net.Addr
+	RemoteAddr() net.Addr
 }
 type Connection interface {
 	Sender
 	Receiver
-
-	LocalAddr() net.Addr
-	RemoteAddr() net.Addr
 }
 
 type qConn struct {

@@ -18,9 +18,7 @@ message TopicRpc {
 
     // Router-specific types
     optional CatRpc cat = 2;
-    // You can add a new router and define its own protobuf type. For example,
-    // if you would like to add GossipSub, you can do
-    // optional GossipSubRpc gs = 3;
+    optional FloodsubRpc floodsub = 3;
 }
 
 message CatRpc {
@@ -31,4 +29,8 @@ message CatRpc {
         repeated bytes coefficients = 2;
         optional bytes extra = 3;
     }
+}
+
+message FloodsubRpc {
+    repeated bytes messages = 1;
 }
