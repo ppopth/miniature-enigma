@@ -56,6 +56,10 @@ func (p *PubSub) Join(topic string) (*Topic, error) {
 	t.AddEventListener(func(ev TopicEvent) {
 		p.handleTopicEvent(topic, ev)
 	})
+
+	for pid := range p.topics[topic] {
+		t.addPeer(pid, p.peers[pid])
+	}
 	return t, nil
 }
 
@@ -130,8 +134,15 @@ func (p *PubSub) handleRemovePeer(pid peer.ID) {
 	defer p.lk.Unlock()
 
 	delete(p.peers, pid)
-	for topic := range p.topics {
-		delete(p.topics[topic], pid)
+	for _, t := range p.myTopics {
+		if t.hasPeer(pid) {
+			t.removePeer(pid)
+		}
+	}
+	for _, tmap := range p.topics {
+		if _, ok := tmap[pid]; ok {
+			delete(tmap, pid)
+		}
 	}
 }
 
@@ -161,26 +172,32 @@ func (p *PubSub) handleSubscriptions(from peer.ID, subs []*pb.RPC_SubOpts) {
 	p.lk.Lock()
 	defer p.lk.Lock()
 	for _, subopt := range subs {
-		t := subopt.GetTopicid()
+		topic := subopt.GetTopicid()
 
 		if subopt.GetSubscribe() {
-			tmap, ok := p.topics[t]
+			tmap, ok := p.topics[topic]
 			if !ok {
 				tmap = make(map[peer.ID]struct{})
-				p.topics[t] = tmap
+				p.topics[topic] = tmap
 			}
 
 			if _, ok = tmap[from]; !ok {
 				tmap[from] = struct{}{}
+				if t, ok := p.myTopics[topic]; ok {
+					t.addPeer(from, p.peers[from])
+				}
 			}
 		} else {
-			tmap, ok := p.topics[t]
+			tmap, ok := p.topics[topic]
 			if !ok {
 				continue
 			}
 
 			if _, ok := tmap[from]; ok {
 				delete(tmap, from)
+				if t, ok := p.myTopics[topic]; ok {
+					t.removePeer(from)
+				}
 			}
 		}
 	}
@@ -201,8 +218,4 @@ type PubSub struct {
 	myTopics map[string]*Topic
 	// the set of topics we are subscribed to
 	mySubs map[string]struct{}
-}
-
-// PubSubRouter is the message router component of PubSub.
-type PubSubRouter interface {
 }

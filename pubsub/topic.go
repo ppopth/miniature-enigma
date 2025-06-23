@@ -2,6 +2,10 @@ package pubsub
 
 import (
 	"sync"
+
+	"github.com/ppopth/go-libp2p-cat/host"
+
+	"github.com/libp2p/go-libp2p/core/peer"
 )
 
 // Topic is the handle for a pubsub topic
@@ -13,6 +17,7 @@ type Topic struct {
 
 	// the set of subscriptions this topic has
 	mySubs map[*Subscription]struct{}
+	peers  map[peer.ID]host.DgramConnection
 	lns    []TopicEventListener
 }
 
@@ -21,6 +26,7 @@ func newTopic(p *PubSub, topic string) *Topic {
 		p:      p,
 		topic:  topic,
 		mySubs: make(map[*Subscription]struct{}),
+		peers:  make(map[peer.ID]host.DgramConnection),
 	}
 }
 
@@ -64,4 +70,17 @@ func (t *Topic) notifyEvent(ev TopicEvent) {
 	for _, ln := range t.lns {
 		ln(ev)
 	}
+}
+
+func (t *Topic) addPeer(p peer.ID, conn host.DgramConnection) {
+	t.peers[p] = conn
+}
+
+func (t *Topic) removePeer(p peer.ID) {
+	delete(t.peers, p)
+}
+
+func (t *Topic) hasPeer(p peer.ID) bool {
+	_, ok := t.peers[p]
+	return ok
 }

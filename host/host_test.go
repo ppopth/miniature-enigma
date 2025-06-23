@@ -74,7 +74,7 @@ func TestUniqueConnection(t *testing.T) {
 	}
 
 	// First client connects first and then the second one
-	addr := s.tr.Conn.LocalAddr()
+	addr := s.LocalAddr()
 	if err := h1.Connect(ctx, addr); err != nil {
 		t.Fatal(err)
 	}
@@ -114,7 +114,7 @@ func TestHandlers(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	addr := s.tr.Conn.LocalAddr()
+	addr := s.LocalAddr()
 	if err := h1.Connect(ctx, addr); err != nil {
 		t.Fatal(err)
 	}
