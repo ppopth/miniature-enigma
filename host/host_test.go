@@ -134,7 +134,7 @@ func TestHandlers(t *testing.T) {
 	added := make(map[peer.ID]struct{})
 	removed := make(map[peer.ID]struct{})
 
-	addHandler := func(p peer.ID, conn DgramConnection) {
+	addHandler := func(p peer.ID, conn Connection) {
 		added[p] = struct{}{}
 	}
 	removeHandler := func(p peer.ID) {

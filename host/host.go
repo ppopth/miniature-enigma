@@ -144,17 +144,38 @@ func (h *Host) Close() error {
 	return nil
 }
 
-type DgramConnection interface {
-	SendDatagram(payload []byte) error
-	ReceiveDatagram(context.Context) ([]byte, error)
+type Sender interface {
+	Send([]byte) error
+}
+type Receiver interface {
+	Receive(context.Context) ([]byte, error)
+}
+type Connection interface {
+	Sender
+	Receiver
 
 	LocalAddr() net.Addr
 	RemoteAddr() net.Addr
 }
 
-// TODO: The handlers are supposed to be able to handle any type of connection, but we
-// support only a datagram connection for now.
-type AddPeerHandler func(peer.ID, DgramConnection)
+type qConn struct {
+	c quic.Connection
+}
+
+func (qc *qConn) Send(buf []byte) error {
+	return qc.c.SendDatagram(buf)
+}
+func (qc *qConn) Receive(ctx context.Context) ([]byte, error) {
+	return qc.c.ReceiveDatagram(ctx)
+}
+func (qc *qConn) LocalAddr() net.Addr {
+	return qc.c.LocalAddr()
+}
+func (qc *qConn) RemoteAddr() net.Addr {
+	return qc.c.RemoteAddr()
+}
+
+type AddPeerHandler func(peer.ID, Connection)
 type RemovePeerHandler func(peer.ID)
 
 func (h *Host) SetPeerHandlers(addHandler AddPeerHandler, removeHandler RemovePeerHandler) {
@@ -166,7 +187,7 @@ func (h *Host) SetPeerHandlers(addHandler AddPeerHandler, removeHandler RemovePe
 
 	// Retrospectively add all exiting peers
 	for p, conn := range h.peers {
-		h.addHandler(p, conn)
+		h.addHandler(p, &qConn{c: conn})
 	}
 }
 
@@ -193,7 +214,7 @@ func (h *Host) handleConnection(conn quic.Connection) (peer.ID, error) {
 	// The connection is valid
 	h.peers[p] = conn
 	if h.addHandler != nil {
-		h.addHandler(p, conn)
+		h.addHandler(p, &qConn{c: conn})
 	}
 
 	h.wg.Add(1)

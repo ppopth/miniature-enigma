@@ -22,7 +22,7 @@ type Topic struct {
 
 	// the set of subscriptions this topic has
 	mySubs map[*Subscription]struct{}
-	peers  map[peer.ID]host.DgramConnection
+	peers  map[peer.ID]struct{}
 	lns    []TopicEventListener
 }
 
@@ -34,7 +34,7 @@ func newTopic(topic string) *Topic {
 
 		topic:  topic,
 		mySubs: make(map[*Subscription]struct{}),
-		peers:  make(map[peer.ID]host.DgramConnection),
+		peers:  make(map[peer.ID]struct{}),
 	}
 }
 
@@ -98,8 +98,8 @@ func (t *Topic) notifyEvent(ev TopicEvent) {
 	}
 }
 
-func (t *Topic) addPeer(p peer.ID, conn host.DgramConnection) {
-	t.peers[p] = conn
+func (t *Topic) addPeer(p peer.ID, conn host.Sender) {
+	t.peers[p] = struct{}{}
 }
 
 func (t *Topic) removePeer(p peer.ID) {

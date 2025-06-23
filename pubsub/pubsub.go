@@ -26,7 +26,7 @@ func NewPubSub(h *host.Host, opts ...Option) (*PubSub, error) {
 		cancel: cancel,
 
 		host:     h,
-		peers:    make(map[peer.ID]host.DgramConnection),
+		peers:    make(map[peer.ID]host.Connection),
 		topics:   make(map[string]map[peer.ID]struct{}),
 		myTopics: make(map[string]*Topic),
 		mySubs:   make(map[string]struct{}),
@@ -83,7 +83,7 @@ func (p *PubSub) Close() error {
 }
 
 // sendHelloPacket sends the initial RPC containing all of our subscriptions to send to new peers
-func (p *PubSub) sendHelloPacket(conn host.DgramConnection) {
+func (p *PubSub) sendHelloPacket(conn host.Connection) {
 	var rpc pb.RPC
 
 	subscriptions := make(map[string]bool)
@@ -106,7 +106,7 @@ func (p *PubSub) sendHelloPacket(conn host.DgramConnection) {
 }
 
 // sendPacket sends an RPC to the datagram connection
-func (p *PubSub) sendPacket(rpc *pb.RPC, conn host.DgramConnection) {
+func (p *PubSub) sendPacket(rpc *pb.RPC, conn host.Connection) {
 	log.Debugf("sent an RPC to %s: %v", conn.RemoteAddr(), rpc)
 
 	buf, err := rpc.Marshal()
@@ -115,19 +115,19 @@ func (p *PubSub) sendPacket(rpc *pb.RPC, conn host.DgramConnection) {
 		return
 	}
 
-	if err := conn.SendDatagram(buf); err != nil {
+	if err := conn.Send(buf); err != nil {
 		log.Errorf("error sending an RPC to %s: %v", conn.RemoteAddr(), err)
 		return
 	}
 }
 
-func (p *PubSub) handleAddPeer(pid peer.ID, conn host.DgramConnection) {
+func (p *PubSub) handleAddPeer(pid peer.ID, conn host.Connection) {
 	// Event loop to read messages from the connections
 	p.wg.Add(1)
 	go func() {
 		defer p.wg.Done()
 		for {
-			msgbytes, err := conn.ReceiveDatagram(p.ctx)
+			msgbytes, err := conn.Receive(p.ctx)
 			if err != nil {
 				// Quietly return
 				return
@@ -235,7 +235,7 @@ type PubSub struct {
 	host *host.Host
 
 	// peers tracks all the peer connections
-	peers map[peer.ID]host.DgramConnection
+	peers map[peer.ID]host.Connection
 	// topics tracks which topics each of our peers are subscribed to
 	topics map[string]map[peer.ID]struct{}
 	// the set of topics we are interested in
