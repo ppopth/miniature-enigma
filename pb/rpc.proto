@@ -1,12 +1,34 @@
 syntax = "proto2";
 
-package pubsub.pb;
+package pb;
 
 message RPC {
-	repeated SubOpts subscriptions = 1;
+    repeated SubOpts subscriptions = 1;
 
-	message SubOpts {
-		optional bool subscribe = 1; // subscribe or unsubcribe
-		optional string topicid = 2;
-	}
+    message SubOpts {
+        optional bool subscribe = 1; // subscribe or unsubcribe
+        optional string topicid = 2;
+    }
+
+    repeated TopicRpc rpcs = 2;
+}
+
+message TopicRpc {
+    optional string topicid = 1;
+
+    // Router-specific types
+    optional CatRpc cat = 2;
+    // You can add a new router and define its own protobuf type. For example,
+    // if you would like to add GossipSub, you can do
+    // optional GossipSubRpc gs = 3;
+}
+
+message CatRpc {
+    repeated Chunk chunks = 1;
+
+    message Chunk {
+        optional bytes data = 1;
+        repeated bytes coefficients = 2;
+        optional bytes extra = 3;
+    }
 }

@@ -1,4 +1,4 @@
-package cat
+package pubsub
 
 import (
 	"context"
@@ -6,20 +6,23 @@ import (
 	"sync"
 
 	"github.com/gogo/protobuf/proto"
-	pb "github.com/ppopth/go-libp2p-cat/pb"
+	"github.com/ppopth/go-libp2p-cat/host"
+	"github.com/ppopth/go-libp2p-cat/pb"
 
+	logging "github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-libp2p/core/peer"
-	"github.com/libp2p/go-libp2p/core/protocol"
 )
+
+var log = logging.Logger("pubsub")
 
 type Option func(*PubSub) error
 
 // NewPubSub returns a new PubSub management object.
-func NewPubSub(ctx context.Context, h *Host, rt PubSubRouter, opts ...Option) (*PubSub, error) {
+func NewPubSub(ctx context.Context, h *host.Host, opts ...Option) (*PubSub, error) {
 	ps := &PubSub{
 		ctx:      ctx,
 		host:     h,
-		rt:       rt,
+		peers:    make(map[peer.ID]host.DgramConnection),
 		topics:   make(map[string]map[peer.ID]struct{}),
 		myTopics: make(map[string]*Topic),
 		mySubs:   make(map[string]struct{}),
@@ -31,8 +34,6 @@ func NewPubSub(ctx context.Context, h *Host, rt PubSubRouter, opts ...Option) (*
 			return nil, err
 		}
 	}
-
-	rt.Attach(ps)
 
 	h.SetPeerHandlers(ps.handleAddPeer, ps.handleRemovePeer)
 
@@ -59,7 +60,7 @@ func (p *PubSub) Join(topic string) (*Topic, error) {
 }
 
 // sendHelloPacket sends the initial RPC containing all of our subscriptions to send to new peers
-func (p *PubSub) sendHelloPacket(conn DgramConnection) {
+func (p *PubSub) sendHelloPacket(conn host.DgramConnection) {
 	var rpc pb.RPC
 
 	subscriptions := make(map[string]bool)
@@ -82,7 +83,7 @@ func (p *PubSub) sendHelloPacket(conn DgramConnection) {
 }
 
 // sendPacket sends an RPC to the datagram connection
-func (p *PubSub) sendPacket(rpc *pb.RPC, conn DgramConnection) {
+func (p *PubSub) sendPacket(rpc *pb.RPC, conn host.DgramConnection) {
 	log.Debugf("sent an RPC to %s: %v", conn.RemoteAddr(), rpc)
 
 	buf, err := rpc.Marshal()
@@ -97,7 +98,7 @@ func (p *PubSub) sendPacket(rpc *pb.RPC, conn DgramConnection) {
 	}
 }
 
-func (p *PubSub) handleAddPeer(pid peer.ID, conn DgramConnection) {
+func (p *PubSub) handleAddPeer(pid peer.ID, conn host.DgramConnection) {
 	// Event loop to read messages from the connections
 	go func() {
 		for {
@@ -117,10 +118,21 @@ func (p *PubSub) handleAddPeer(pid peer.ID, conn DgramConnection) {
 		}
 	}()
 
+	p.lk.Lock()
+	p.peers[pid] = conn
+	p.lk.Unlock()
+
 	// Send the initial packet for a new connection
 	p.sendHelloPacket(conn)
 }
 func (p *PubSub) handleRemovePeer(pid peer.ID) {
+	p.lk.Lock()
+	defer p.lk.Unlock()
+
+	delete(p.peers, pid)
+	for topic := range p.topics {
+		delete(p.topics[topic], pid)
+	}
 }
 
 func (p *PubSub) handleTopicEvent(topic string, ev TopicEvent) {
@@ -140,6 +152,14 @@ func (p *PubSub) handleIncomingRPC(from peer.ID, rpc *pb.RPC) {
 	log.Debugf("received an RPC from %s: %v", from, rpc)
 	subs := rpc.GetSubscriptions()
 
+	if len(subs) > 0 {
+		p.handleSubscriptions(from, subs)
+	}
+}
+
+func (p *PubSub) handleSubscriptions(from peer.ID, subs []*pb.RPC_SubOpts) {
+	p.lk.Lock()
+	defer p.lk.Lock()
 	for _, subopt := range subs {
 		t := subopt.GetTopicid()
 
@@ -171,9 +191,10 @@ type PubSub struct {
 	ctx context.Context
 	lk  sync.Mutex
 
-	host *Host
-	rt   PubSubRouter
+	host *host.Host
 
+	// peers tracks all the peer connections
+	peers map[peer.ID]host.DgramConnection
 	// topics tracks which topics each of our peers are subscribed to
 	topics map[string]map[peer.ID]struct{}
 	// the set of topics we are interested in
@@ -184,24 +205,4 @@ type PubSub struct {
 
 // PubSubRouter is the message router component of PubSub.
 type PubSubRouter interface {
-	// Protocols returns the list of protocols supported by the router.
-	Protocols() []protocol.ID
-	// Attach is invoked by the PubSub constructor to attach the router to a
-	// freshly initialized PubSub instance.
-	Attach(*PubSub)
-	// AddPeer notifies the router that a new peer has been connected.
-	AddPeer(peer.ID, protocol.ID)
-	// RemovePeer notifies the router that a peer has been disconnected.
-	RemovePeer(peer.ID)
-	// Publish is invoked to forward a new message that has been validated.
-	Publish(*Message)
-	// Join notifies the router that we want to receive and forward messages in a topic.
-	// It is invoked after the subscription announcement.
-	Join(topic string)
-	// Leave notifies the router that we are no longer interested in a topic.
-	// It is invoked after the unsubscription announcement.
-	Leave(topic string)
-}
-
-type Message struct {
 }

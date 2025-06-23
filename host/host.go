@@ -1,4 +1,4 @@
-package cat
+package host
 
 import (
 	"context"
@@ -18,9 +18,12 @@ import (
 
 	quic "github.com/quic-go/quic-go"
 
+	logging "github.com/ipfs/go-log/v2"
 	ic "github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/peer"
 )
+
+var log = logging.Logger("host")
 
 const (
 	DefaultPort = 7001
@@ -104,6 +107,14 @@ func (h *Host) Connect(ctx context.Context, addr net.Addr) error {
 	}
 	log.Infof("connected to %s at %s", p, addr)
 	return nil
+}
+
+func (h *Host) LocalAddr() net.Addr {
+	return h.tr.Conn.LocalAddr()
+}
+
+func (h *Host) ID() peer.ID {
+	return h.pid
 }
 
 type DgramConnection interface {

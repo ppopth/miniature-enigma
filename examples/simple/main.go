@@ -6,7 +6,8 @@ import (
 	"net"
 	"net/netip"
 
-	cat "github.com/ppopth/go-libp2p-cat"
+	"github.com/ppopth/go-libp2p-cat/host"
+	"github.com/ppopth/go-libp2p-cat/pubsub"
 )
 
 var (
@@ -17,19 +18,19 @@ var (
 func main() {
 	flag.Parse()
 
-	var opts []cat.HostOption
+	var opts []host.HostOption
 	if *listenFlag != 0 {
-		opts = append(opts, cat.WithAddrPort(
+		opts = append(opts, host.WithAddrPort(
 			netip.AddrPortFrom(netip.IPv4Unspecified(), uint16(*listenFlag)),
 		))
 	}
 
 	ctx := context.Background()
-	h, err := cat.NewHost(ctx, opts...)
+	h, err := host.NewHost(ctx, opts...)
 	if err != nil {
 		panic(err)
 	}
-	ps, err := cat.NewCat(ctx, h)
+	ps, err := pubsub.NewPubSub(ctx, h)
 	if err != nil {
 		panic(err)
 	}
