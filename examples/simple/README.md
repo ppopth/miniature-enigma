@@ -4,7 +4,7 @@ This simple example connects two nodes to each other and performs basic operatio
 
 ## Build
 
-From the `go-libp2p-cat/examples` directory run the following:
+From the `p2p-broadcast/examples` directory run the following:
 
 ```
 > cd simple/

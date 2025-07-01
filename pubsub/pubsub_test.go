@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ppopth/go-libp2p-cat/host"
+	"github.com/ppopth/p2p-broadcast/host"
 )
 
 func TestHelloPacket(t *testing.T) {

@@ -6,8 +6,8 @@ import (
 	"sync"
 
 	"github.com/gogo/protobuf/proto"
-	"github.com/ppopth/go-libp2p-cat/host"
-	"github.com/ppopth/go-libp2p-cat/pb"
+	"github.com/ppopth/p2p-broadcast/host"
+	"github.com/ppopth/p2p-broadcast/pb"
 
 	"github.com/libp2p/go-libp2p/core/peer"
 )

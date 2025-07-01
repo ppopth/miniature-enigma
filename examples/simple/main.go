@@ -6,8 +6,8 @@ import (
 	"net"
 	"net/netip"
 
-	"github.com/ppopth/go-libp2p-cat/host"
-	"github.com/ppopth/go-libp2p-cat/pubsub"
+	"github.com/ppopth/p2p-broadcast/host"
+	"github.com/ppopth/p2p-broadcast/pubsub"
 )
 
 var (

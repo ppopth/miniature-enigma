@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ppopth/go-libp2p-cat/pb"
-	"github.com/ppopth/go-libp2p-cat/pubsub"
+	"github.com/ppopth/p2p-broadcast/pb"
+	"github.com/ppopth/p2p-broadcast/pubsub"
 
 	"github.com/libp2p/go-libp2p/core/peer"
 )

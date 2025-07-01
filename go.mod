@@ -1,4 +1,4 @@
-module github.com/ppopth/go-libp2p-cat
+module github.com/ppopth/p2p-broadcast
 
 go 1.23.3
 
