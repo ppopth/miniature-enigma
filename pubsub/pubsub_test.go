@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ppopth/p2p-broadcast/host"
+	"github.com/ppopth/eth-ec-broadcast/host"
 )
 
 func TestHelloPacket(t *testing.T) {

@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ppopth/p2p-broadcast/host"
-	"github.com/ppopth/p2p-broadcast/pubsub"
+	"github.com/ppopth/eth-ec-broadcast/host"
+	"github.com/ppopth/eth-ec-broadcast/pubsub"
 )
 
 func isConnected(graph [][]bool) bool {

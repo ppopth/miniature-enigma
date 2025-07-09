@@ -1,1 +1,1 @@
-# p2p-broadcast
+# eth-ec-broadcast
