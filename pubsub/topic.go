@@ -69,8 +69,8 @@ func (t *Topic) Close() error {
 	return nil
 }
 
-func (t *Topic) Publish(buf []byte) {
-	t.rt.Publish(buf)
+func (t *Topic) Publish(buf []byte) error {
+	return t.rt.Publish(buf)
 }
 
 // Subscribe subscribes the topic and returns a Subscription object.

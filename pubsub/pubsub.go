@@ -266,6 +266,9 @@ type PubSub struct {
 
 // sendRPC sends an RPC to the connection
 func sendRPC(rpc *pb.RPC, conn host.Sender) {
+	if rpc == nil || conn == nil {
+		return
+	}
 	log.Debugf("sent an RPC to %s: %v", conn.RemoteAddr(), rpc)
 
 	buf, err := rpc.Marshal()

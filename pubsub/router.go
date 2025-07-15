@@ -10,7 +10,7 @@ import (
 
 // Router is a pubsub algorithm used in each topic.
 type Router interface {
-	Publish([]byte)
+	Publish([]byte) error
 	Next(context.Context) ([]byte, error)
 
 	AddPeer(peer.ID, TopicSendFunc)

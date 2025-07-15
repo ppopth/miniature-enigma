@@ -17,17 +17,18 @@ message TopicRpc {
     optional string topicid = 1;
 
     // Router-specific types
-    optional CatRpc cat = 2;
+    optional RlncRpc rlnc = 2;
     optional FloodsubRpc floodsub = 3;
 }
 
-message CatRpc {
+message RlncRpc {
     repeated Chunk chunks = 1;
 
     message Chunk {
-        optional bytes data = 1;
-        repeated bytes coefficients = 2;
-        optional bytes extra = 3;
+        optional string messageID = 1;
+        optional bytes data = 2;
+        repeated bytes coefficients = 3;
+        optional bytes extra = 4;
     }
 }
 

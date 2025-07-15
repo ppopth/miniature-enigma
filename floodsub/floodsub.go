@@ -45,8 +45,9 @@ func NewFloodsub(idFunc MsgIdFunc) *FloodSubRouter {
 	return fs
 }
 
-func (fs *FloodSubRouter) Publish(buf []byte) {
+func (fs *FloodSubRouter) Publish(buf []byte) error {
 	fs.handleMessages([][]byte{buf})
+	return nil
 }
 
 func (fs *FloodSubRouter) Next(ctx context.Context) ([]byte, error) {
