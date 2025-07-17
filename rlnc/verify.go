@@ -1,7 +1,7 @@
 package rlnc
 
 import (
-	"github.com/ppopth/p2p-broadcast/rlnc/field"
+	"github.com/ethp2p/eth-ec-broadcast/rlnc/field"
 )
 
 type ChunkVerifyAlgorithm interface {

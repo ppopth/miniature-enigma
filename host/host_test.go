@@ -23,7 +23,7 @@ func TestCertificate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	crtPid, err := parsePeerIDFromCerticate(crt.Leaf)
+	crtPid, err := parsePeerIDFromCertificate(crt.Leaf)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,10 +87,10 @@ func TestUniqueConnection(t *testing.T) {
 	// The first client should have connected successfully while the second
 	// shouldn't because it has a duplicated peer id
 	time.Sleep(50 * time.Millisecond)
-	if len(h1.peers) != 1 {
+	if len(h1.connections) != 1 {
 		t.Fatal("the first client didn't connect successfully")
 	}
-	if len(h2.peers) != 0 {
+	if len(h2.connections) != 0 {
 		t.Fatal("the second client did connect successfully")
 	}
 
@@ -126,10 +126,10 @@ func TestHandlers(t *testing.T) {
 	h1map := make(map[peer.ID]struct{})
 	h2map := make(map[peer.ID]struct{})
 	h12map := make(map[peer.ID]struct{})
-	h1map[h1.pid] = struct{}{}
-	h2map[h2.pid] = struct{}{}
-	h12map[h1.pid] = struct{}{}
-	h12map[h2.pid] = struct{}{}
+	h1map[h1.peerID] = struct{}{}
+	h2map[h2.peerID] = struct{}{}
+	h12map[h1.peerID] = struct{}{}
+	h12map[h2.peerID] = struct{}{}
 
 	added := make(map[peer.ID]struct{})
 	removed := make(map[peer.ID]struct{})
@@ -167,8 +167,8 @@ func TestHandlers(t *testing.T) {
 	added = make(map[peer.ID]struct{})
 	removed = make(map[peer.ID]struct{})
 
-	h1.peers[s.pid].CloseWithError(0, "")
-	h2.peers[s.pid].CloseWithError(0, "")
+	h1.connections[s.peerID].CloseWithError(0, "")
+	h2.connections[s.peerID].CloseWithError(0, "")
 	time.Sleep(50 * time.Millisecond)
 
 	if !maps.Equal(added, empty) {

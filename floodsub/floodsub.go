@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ppopth/eth-ec-broadcast/pb"
-	"github.com/ppopth/eth-ec-broadcast/pubsub"
+	"github.com/ethp2p/eth-ec-broadcast/pb"
+	"github.com/ethp2p/eth-ec-broadcast/pubsub"
 
 	"github.com/libp2p/go-libp2p/core/peer"
 )
@@ -16,120 +16,134 @@ const (
 	TimeCacheDuration = 120 * time.Second
 )
 
+// MsgIdFunc generates unique message IDs from message data
 type MsgIdFunc func([]byte) string
 
+// FloodSubRouter implements message flooding for topic broadcast
 type FloodSubRouter struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	lk   sync.Mutex
-	cond *sync.Cond
+	mutex sync.Mutex // Protects all fields below
+	cond  *sync.Cond // Notifies waiting consumers
 
-	peers    map[peer.ID]pubsub.TopicSendFunc
-	idFunc   MsgIdFunc
-	seen     *TimeCache
-	received [][]byte
+	peerSendFuncs    map[peer.ID]pubsub.TopicSendFunc // Send functions for each peer
+	messageIdFunc    MsgIdFunc                        // Function to generate message IDs
+	seenMessages     *TimeCache                       // Cache of seen message IDs
+	receivedMessages [][]byte                         // Buffer of received messages
 }
 
-func NewFloodsub(idFunc MsgIdFunc) *FloodSubRouter {
+// NewFloodsub creates a new FloodSub router with the given message ID function
+func NewFloodsub(messageIdFunc MsgIdFunc) *FloodSubRouter {
 	ctx, cancel := context.WithCancel(context.Background())
-	fs := &FloodSubRouter{
+	router := &FloodSubRouter{
 		ctx:    ctx,
 		cancel: cancel,
 
-		peers:  make(map[peer.ID]pubsub.TopicSendFunc),
-		idFunc: idFunc,
-		seen:   NewTimeCache(TimeCacheDuration),
+		peerSendFuncs: make(map[peer.ID]pubsub.TopicSendFunc),
+		messageIdFunc: messageIdFunc,
+		seenMessages:  NewTimeCache(TimeCacheDuration),
 	}
-	fs.cond = sync.NewCond(&fs.lk)
-	return fs
+	router.cond = sync.NewCond(&router.mutex)
+	return router
 }
 
-func (fs *FloodSubRouter) Publish(buf []byte) error {
-	fs.handleMessages([][]byte{buf})
+// Publish broadcasts a message to all connected peers
+func (router *FloodSubRouter) Publish(messageData []byte) error {
+	router.handleMessages([][]byte{messageData})
 	return nil
 }
 
-func (fs *FloodSubRouter) Next(ctx context.Context) ([]byte, error) {
-	fs.lk.Lock()
-	defer fs.lk.Unlock()
+// Next returns the next received message, blocking until one is available
+func (router *FloodSubRouter) Next(ctx context.Context) ([]byte, error) {
+	router.mutex.Lock()
+	defer router.mutex.Unlock()
 
-	if len(fs.received) > 0 {
-		buf := fs.received[0]
-		fs.received = fs.received[1:]
-		return buf, nil
+	// Return immediately if we have buffered messages
+	if len(router.receivedMessages) > 0 {
+		messageData := router.receivedMessages[0]
+		router.receivedMessages = router.receivedMessages[1:]
+		return messageData, nil
 	}
 
+	// Set up context cancellation to wake up waiters
 	unregisterAfterFunc := context.AfterFunc(ctx, func() {
-		// Wake up all the waiting routines. The only routine that correponds
-		// to this Next call will return from the function. Note that this can
-		// be expensive, if there are too many waiting Wait calls.
-		fs.cond.Broadcast()
+		// Wake up all waiting routines when context is cancelled
+		router.cond.Broadcast()
 	})
 	defer unregisterAfterFunc()
 
-	for len(fs.received) == 0 {
-		fs.cond.Wait()
+	// Wait for messages to arrive
+	for len(router.receivedMessages) == 0 {
+		router.cond.Wait()
 		select {
 		case <-ctx.Done():
 			return nil, fmt.Errorf("the call has been cancelled")
-		case <-fs.ctx.Done():
+		case <-router.ctx.Done():
 			return nil, fmt.Errorf("the router has been closed")
 		default:
 		}
 	}
-	buf := fs.received[0]
-	fs.received = fs.received[1:]
-	return buf, nil
+	messageData := router.receivedMessages[0]
+	router.receivedMessages = router.receivedMessages[1:]
+	return messageData, nil
 }
 
-func (fs *FloodSubRouter) AddPeer(p peer.ID, sendFunc pubsub.TopicSendFunc) {
-	fs.lk.Lock()
-	defer fs.lk.Unlock()
+// AddPeer registers a new peer with its send function
+func (router *FloodSubRouter) AddPeer(peerID peer.ID, sendFunc pubsub.TopicSendFunc) {
+	router.mutex.Lock()
+	defer router.mutex.Unlock()
 
-	fs.peers[p] = sendFunc
+	router.peerSendFuncs[peerID] = sendFunc
 }
 
-func (fs *FloodSubRouter) RemovePeer(p peer.ID) {
-	fs.lk.Lock()
-	defer fs.lk.Unlock()
+// RemovePeer removes a peer from the router
+func (router *FloodSubRouter) RemovePeer(peerID peer.ID) {
+	router.mutex.Lock()
+	defer router.mutex.Unlock()
 
-	delete(fs.peers, p)
+	delete(router.peerSendFuncs, peerID)
 }
 
-func (fs *FloodSubRouter) HandleIncomingRPC(from peer.ID, trpc *pb.TopicRpc) {
-	fsRpc := trpc.GetFloodsub()
-	fs.handleMessages(fsRpc.GetMessages())
+// HandleIncomingRPC processes incoming RPC messages from peers
+func (router *FloodSubRouter) HandleIncomingRPC(fromPeer peer.ID, topicRPC *pb.TopicRpc) {
+	floodsubRPC := topicRPC.GetFloodsub()
+	router.handleMessages(floodsubRPC.GetMessages())
 }
 
-func (fs *FloodSubRouter) Close() error {
-	fs.cancel()
-	fs.cond.Broadcast()
-	fs.seen.Close()
+// Close shuts down the router and releases resources
+func (router *FloodSubRouter) Close() error {
+	router.cancel()
+	router.cond.Broadcast()
+	router.seenMessages.Close()
 	return nil
 }
 
-func (fs *FloodSubRouter) handleMessages(msgs [][]byte) {
-	fs.lk.Lock()
+// handleMessages processes and forwards new messages to peers
+func (router *FloodSubRouter) handleMessages(messages [][]byte) {
+	router.mutex.Lock()
+	// Copy send functions to avoid holding mutex during network calls
 	var sendFuncs []pubsub.TopicSendFunc
-	for _, sendFunc := range fs.peers {
+	for _, sendFunc := range router.peerSendFuncs {
 		sendFuncs = append(sendFuncs, sendFunc)
 	}
 
 	rpc := &pb.TopicRpc{
 		Floodsub: &pb.FloodsubRpc{},
 	}
-	for _, m := range msgs {
-		id := fs.idFunc(m)
-		if !fs.seen.Has(id) {
-			fs.seen.Add(id)
-			fs.received = append(fs.received, m)
-			fs.cond.Signal()
-			rpc.Floodsub.Messages = append(rpc.Floodsub.Messages, m)
+	// Process each message and deduplicate using seen cache
+	for _, messageData := range messages {
+		messageID := router.messageIdFunc(messageData)
+		if !router.seenMessages.Has(messageID) {
+			router.seenMessages.Add(messageID)
+			router.receivedMessages = append(router.receivedMessages, messageData)
+			router.cond.Signal()
+			rpc.Floodsub.Messages = append(rpc.Floodsub.Messages, messageData)
 		}
 	}
 
-	fs.lk.Unlock()
+	router.mutex.Unlock()
+	// Forward new messages to all connected peers
 	if len(rpc.Floodsub.Messages) > 0 {
 		for _, sendFunc := range sendFuncs {
 			sendFunc(rpc)

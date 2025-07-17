@@ -10,9 +10,9 @@ import (
 	"slices"
 	"sync"
 
-	"github.com/ppopth/p2p-broadcast/pb"
-	"github.com/ppopth/p2p-broadcast/pubsub"
-	"github.com/ppopth/p2p-broadcast/rlnc/field"
+	"github.com/ethp2p/eth-ec-broadcast/pb"
+	"github.com/ethp2p/eth-ec-broadcast/pubsub"
+	"github.com/ethp2p/eth-ec-broadcast/rlnc/field"
 
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-libp2p/core/peer"

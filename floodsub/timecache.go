@@ -6,54 +6,60 @@ import (
 	"time"
 )
 
+// sweepInterval controls how often expired entries are cleaned up
 var sweepInterval = 1 * time.Minute
 
+// TimeCache provides a time-based cache with automatic expiration
 type TimeCache struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
 
-	lk  sync.Mutex
-	m   map[string]time.Time
-	ttl time.Duration
+	mutex      sync.Mutex           // Protects entries map
+	entries    map[string]time.Time // Maps keys to expiration times
+	timeToLive time.Duration        // How long entries remain valid
 }
 
-func NewTimeCache(ttl time.Duration) *TimeCache {
+// NewTimeCache creates a new time-based cache with the given TTL
+func NewTimeCache(timeToLive time.Duration) *TimeCache {
 	ctx, cancel := context.WithCancel(context.Background())
 
-	tc := &TimeCache{
+	cache := &TimeCache{
 		ctx:    ctx,
 		cancel: cancel,
 
-		m:   make(map[string]time.Time),
-		ttl: ttl,
+		entries:    make(map[string]time.Time),
+		timeToLive: timeToLive,
 	}
 
-	tc.wg.Add(1)
-	go tc.background()
+	cache.wg.Add(1)
+	go cache.background()
 
-	return tc
+	return cache
 }
 
-func (tc *TimeCache) Has(key string) bool {
-	tc.lk.Lock()
-	defer tc.lk.Unlock()
+// Has checks if a key exists in the cache
+func (cache *TimeCache) Has(key string) bool {
+	cache.mutex.Lock()
+	defer cache.mutex.Unlock()
 
-	_, ok := tc.m[key]
-	return ok
+	_, exists := cache.entries[key]
+	return exists
 }
 
-func (tc *TimeCache) Add(key string) {
-	tc.lk.Lock()
-	defer tc.lk.Unlock()
+// Add inserts a key into the cache with TTL-based expiration
+func (cache *TimeCache) Add(key string) {
+	cache.mutex.Lock()
+	defer cache.mutex.Unlock()
 
-	if _, ok := tc.m[key]; !ok {
-		tc.m[key] = time.Now().Add(tc.ttl)
+	if _, exists := cache.entries[key]; !exists {
+		cache.entries[key] = time.Now().Add(cache.timeToLive)
 	}
 }
 
-func (tc *TimeCache) background() {
-	defer tc.wg.Done()
+// background runs the cleanup routine in a separate goroutine
+func (cache *TimeCache) background() {
+	defer cache.wg.Done()
 
 	ticker := time.NewTicker(sweepInterval)
 	defer ticker.Stop()
@@ -61,27 +67,29 @@ func (tc *TimeCache) background() {
 	for {
 		select {
 		case now := <-ticker.C:
-			tc.sweep(now)
+			cache.sweep(now)
 
-		case <-tc.ctx.Done():
+		case <-cache.ctx.Done():
 			return
 		}
 	}
 }
 
-func (tc *TimeCache) sweep(now time.Time) {
-	tc.lk.Lock()
-	defer tc.lk.Unlock()
+// sweep removes expired entries from the cache
+func (cache *TimeCache) sweep(now time.Time) {
+	cache.mutex.Lock()
+	defer cache.mutex.Unlock()
 
-	for k, expiry := range tc.m {
-		if expiry.Before(now) {
-			delete(tc.m, k)
+	for key, expirationTime := range cache.entries {
+		if expirationTime.Before(now) {
+			delete(cache.entries, key)
 		}
 	}
 }
 
-func (tc *TimeCache) Close() error {
-	tc.cancel()
-	tc.wg.Wait()
+// Close shuts down the cache and stops background cleanup
+func (cache *TimeCache) Close() error {
+	cache.cancel()
+	cache.wg.Wait()
 	return nil
 }

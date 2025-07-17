@@ -5,95 +5,122 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/ethp2p/eth-ec-broadcast/host"
+	"github.com/ethp2p/eth-ec-broadcast/pb"
 	"github.com/gogo/protobuf/proto"
-	"github.com/ppopth/eth-ec-broadcast/host"
-	"github.com/ppopth/eth-ec-broadcast/pb"
 
 	"github.com/libp2p/go-libp2p/core/peer"
 )
 
+// TopicSendFunc is a function that sends topic RPC messages
 type TopicSendFunc func(*pb.TopicRpc)
 
-// Topic is the handle for a pubsub topic
+// Topic manages a single pubsub topic and its subscriptions
 type Topic struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
 
-	lk sync.Mutex
+	mutex sync.Mutex // Protects all fields below
 
-	rt    Router
-	topic string
+	router    Router // Message routing implementation
+	topicName string // Name of this topic
 
-	// the set of subscriptions this topic has
-	mySubs map[*Subscription]struct{}
-	peers  map[peer.ID]host.Sender
-	lns    []TopicEventListener
+	subscriptions map[*Subscription]struct{} // Active subscriptions
+	peers         map[peer.ID]host.Sender    // Connected peers
+	listeners     []TopicEventListener       // Event listeners
 }
 
-func newTopic(topic string, rt Router) *Topic {
+// newTopic creates a new topic with the given router
+func newTopic(topicName string, router Router) *Topic {
 	ctx, cancel := context.WithCancel(context.Background())
-	t := &Topic{
+	topic := &Topic{
 		ctx:    ctx,
 		cancel: cancel,
 
-		rt:     rt,
-		topic:  topic,
-		mySubs: make(map[*Subscription]struct{}),
-		peers:  make(map[peer.ID]host.Sender),
+		router:        router,
+		topicName:     topicName,
+		subscriptions: make(map[*Subscription]struct{}),
+		peers:         make(map[peer.ID]host.Sender),
 	}
 
-	t.wg.Add(1)
-	go t.background()
+	topic.wg.Add(1)
+	go topic.background()
 
-	return t
+	return topic
 }
 
-// String returns the topic associated with topic.
+// String returns the topic name
 func (t *Topic) String() string {
-	return t.topic
+	return t.topicName
 }
 
+// Close shuts down the topic and all its subscriptions
 func (t *Topic) Close() error {
-	t.lk.Lock()
-	for sub := range t.mySubs {
-		sub.Close()
-	}
-	t.notifyEvent(TopicEventUnsubscribe)
-	if t.rt != nil {
-		t.rt.Close()
-	}
+	t.mutex.Lock()
+	// Cancel context to prevent new operations
 	t.cancel()
-	t.lk.Unlock()
+	// Copy subscriptions to avoid deadlock during Close()
+	var subscriptionsToClose []*Subscription
+	for subscription := range t.subscriptions {
+		subscriptionsToClose = append(subscriptionsToClose, subscription)
+	}
+	t.mutex.Unlock()
+
+	// Close all subscriptions without holding the mutex
+	for _, subscription := range subscriptionsToClose {
+		subscription.Close()
+	}
+
+	if t.router != nil {
+		t.router.Close()
+	}
 	t.wg.Wait()
 	return nil
 }
 
-func (t *Topic) Publish(buf []byte) error {
-	return t.rt.Publish(buf)
+// Publish publishes a message to the topic
+func (t *Topic) Publish(data []byte) error {
+	return t.router.Publish(data)
 }
 
-// Subscribe subscribes the topic and returns a Subscription object.
+// Subscribe creates a new subscription to this topic
 func (t *Topic) Subscribe() (*Subscription, error) {
 	select {
 	case <-t.ctx.Done():
-		return nil, fmt.Errorf("the topic has been closed")
+		return nil, fmt.Errorf("topic has been closed")
 	default:
 	}
 
-	sub := newSubscription(t)
+	subscription := newSubscription(t)
 
-	t.lk.Lock()
-	defer t.lk.Unlock()
-	if len(t.mySubs) == 0 {
+	t.mutex.Lock()
+	defer t.mutex.Unlock()
+	// If this is the first subscription, notify about subscribe event
+	if len(t.subscriptions) == 0 {
 		t.notifyEvent(TopicEventSubscribe)
 	}
-	t.mySubs[sub] = struct{}{}
+	t.subscriptions[subscription] = struct{}{}
 
-	return sub, nil
+	return subscription, nil
 }
 
+// removeSubscription removes a subscription from the topic
+func (t *Topic) removeSubscription(subscription *Subscription) {
+	t.mutex.Lock()
+	defer t.mutex.Unlock()
+
+	delete(t.subscriptions, subscription)
+	// If no more subscriptions, notify about unsubscribe event
+	if len(t.subscriptions) == 0 {
+		t.notifyEvent(TopicEventUnsubscribe)
+	}
+}
+
+// TopicEventListener receives topic events
 type TopicEventListener func(TopicEvent)
+
+// TopicEvent represents topic subscription events
 type TopicEvent int
 
 const (
@@ -101,87 +128,88 @@ const (
 	TopicEventUnsubscribe
 )
 
-// AddEventListener allows others to receive events related to the topic.
-func (t *Topic) AddEventListener(ln TopicEventListener) {
+// AddEventListener registers a listener for topic events
+func (t *Topic) AddEventListener(listener TopicEventListener) {
 	select {
 	case <-t.ctx.Done():
 		return
 	default:
 	}
 
-	t.lk.Lock()
-	defer t.lk.Unlock()
+	t.mutex.Lock()
+	defer t.mutex.Unlock()
 
-	t.lns = append(t.lns, ln)
+	t.listeners = append(t.listeners, listener)
 }
 
-// SATETY: Assume that the lock has been acquired keep to the set of listeners static
-func (t *Topic) notifyEvent(ev TopicEvent) {
-	select {
-	case <-t.ctx.Done():
-		return
-	default:
-	}
-
-	for _, ln := range t.lns {
-		ln(ev)
+// notifyEvent sends an event to all listeners (must be called with mutex held)
+func (t *Topic) notifyEvent(event TopicEvent) {
+	for _, listener := range t.listeners {
+		listener(event)
 	}
 }
 
-func (t *Topic) addPeer(p peer.ID, sender host.Sender) {
-	t.lk.Lock()
-	defer t.lk.Unlock()
+// addPeer adds a peer to this topic
+func (t *Topic) addPeer(peerID peer.ID, sender host.Sender) {
+	t.mutex.Lock()
+	defer t.mutex.Unlock()
 
-	t.peers[p] = sender
-	t.rt.AddPeer(p, func(trpc *pb.TopicRpc) {
-		if trpc == nil {
+	t.peers[peerID] = sender
+	t.router.AddPeer(peerID, func(topicRPC *pb.TopicRpc) {
+		if topicRPC == nil {
 			return
 		}
-		// Replace the topic id
-		trpc.Topicid = proto.String(t.topic)
+		// Set the topic ID
+		topicRPC.Topicid = proto.String(t.topicName)
 
 		var rpc pb.RPC
-		rpc.Rpcs = append(rpc.Rpcs, trpc)
+		rpc.Rpcs = append(rpc.Rpcs, topicRPC)
 
 		sendRPC(&rpc, sender)
 	})
 }
 
-func (t *Topic) removePeer(p peer.ID) {
-	t.lk.Lock()
-	defer t.lk.Unlock()
+// removePeer removes a peer from this topic
+func (t *Topic) removePeer(peerID peer.ID) {
+	t.mutex.Lock()
+	defer t.mutex.Unlock()
 
-	delete(t.peers, p)
-	t.rt.RemovePeer(p)
+	delete(t.peers, peerID)
+	t.router.RemovePeer(peerID)
 }
 
-func (t *Topic) hasPeer(p peer.ID) bool {
-	t.lk.Lock()
-	defer t.lk.Unlock()
+// hasPeer checks if a peer is connected to this topic
+func (t *Topic) hasPeer(peerID peer.ID) bool {
+	t.mutex.Lock()
+	defer t.mutex.Unlock()
 
-	_, ok := t.peers[p]
-	return ok
+	_, exists := t.peers[peerID]
+	return exists
 }
 
-func (t *Topic) handleIncomingRPC(from peer.ID, rpc *pb.TopicRpc) {
-	t.rt.HandleIncomingRPC(from, rpc)
+// handleIncomingRPC forwards RPC messages to the router
+func (t *Topic) handleIncomingRPC(fromPeer peer.ID, rpc *pb.TopicRpc) {
+	t.router.HandleIncomingRPC(fromPeer, rpc)
 }
 
+// background processes incoming messages from the router
 func (t *Topic) background() {
 	defer t.wg.Done()
-	if t.rt == nil {
+	if t.router == nil {
 		return
 	}
 
 	for {
-		buf, err := t.rt.Next(t.ctx)
+		// Get next message from router
+		message, err := t.router.Next(t.ctx)
 		if err != nil {
 			return
 		}
-		t.lk.Lock()
-		for sub := range t.mySubs {
-			sub.put(buf)
+		// Deliver to all subscriptions
+		t.mutex.Lock()
+		for subscription := range t.subscriptions {
+			subscription.put(message)
 		}
-		t.lk.Unlock()
+		t.mutex.Unlock()
 	}
 }

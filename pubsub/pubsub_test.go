@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ppopth/eth-ec-broadcast/host"
+	"github.com/ethp2p/eth-ec-broadcast/host"
 )
 
 func TestHelloPacket(t *testing.T) {
@@ -47,13 +47,13 @@ func TestHelloPacket(t *testing.T) {
 
 	// Check that h1 remembers the subscribed topics of h2
 	for _, topic := range topics {
-		tmap, ok := p1.topics[topic]
+		tmap, ok := p1.topicSubscriptions[topic]
 		if !ok {
-			t.Fatalf("topic %s not found in p1.topics", topic)
+			t.Fatalf("topic %s not found in p1.topicSubscriptions", topic)
 		}
 		_, ok = tmap[h2.ID()]
 		if !ok {
-			t.Fatalf("pid %s not found in p1.topics", h2.ID())
+			t.Fatalf("pid %s not found in p1.topicSubscriptions", h2.ID())
 		}
 	}
 

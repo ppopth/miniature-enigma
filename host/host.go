@@ -29,76 +29,80 @@ const (
 	DefaultPort = 7001
 )
 
+// HostOption configures a Host during construction
 type HostOption func(*Host) error
 
-// NewHost returns a new Host object.
+// NewHost creates a new Host for peer-to-peer QUIC connections
 func NewHost(opts ...HostOption) (*Host, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 
-	h := &Host{
+	host := &Host{
 		ctx:    ctx,
 		cancel: cancel,
 
-		ep:    net.UDPAddrFromAddrPort(netip.AddrPortFrom(netip.IPv4Unspecified(), DefaultPort)),
-		peers: make(map[peer.ID]quic.Connection),
+		endpoint:    net.UDPAddrFromAddrPort(netip.AddrPortFrom(netip.IPv4Unspecified(), DefaultPort)),
+		connections: make(map[peer.ID]quic.Connection),
 	}
 
+	// Apply configuration options
 	for _, opt := range opts {
-		err := opt(h)
+		err := opt(host)
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	// If the private key is not specified, generate a new one
-	if h.sk == nil {
-		_, sk, err := ed25519.GenerateKey(rand.Reader)
+	// Generate identity if not provided
+	if host.privateKey == nil {
+		_, privateKey, err := ed25519.GenerateKey(rand.Reader)
 		if err != nil {
 			return nil, err
 		}
-		err = WithIdentity(sk)(h)
+		err = WithIdentity(privateKey)(host)
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	// Listen for the specified endpoint
-	conn, err := net.ListenUDP("udp", h.ep)
+	// Create UDP socket
+	udpConn, err := net.ListenUDP("udp", host.endpoint)
 	if err != nil {
 		return nil, err
 	}
-	h.tr = &quic.Transport{
-		Conn: conn,
+	host.transport = &quic.Transport{
+		Conn: udpConn,
 	}
 
-	// Create a self-signed certifiate from the identity private key
-	if h.crt, err = createTLSCertFromKey(h.sk); err != nil {
+	// Create self-signed certificate from identity
+	if host.certificate, err = createTLSCertFromKey(host.privateKey); err != nil {
 		return nil, err
 	}
-	// Assign the certificate to the TLS config and require client authentication
+	// Configure TLS with mutual authentication
 	tlsConfig := &tls.Config{
-		Certificates: []tls.Certificate{*h.crt},
+		Certificates: []tls.Certificate{*host.certificate},
 		ClientAuth:   tls.RequireAnyClientCert,
 	}
 	quicConfig := &quic.Config{
 		EnableDatagrams: true,
 	}
-	h.ln, err = h.tr.Listen(tlsConfig, quicConfig)
+	host.listener, err = host.transport.Listen(tlsConfig, quicConfig)
 	if err != nil {
 		return nil, err
 	}
 
-	h.wg.Add(1)
-	go h.processLoop()
+	host.waitGroup.Add(1)
+	go host.acceptLoop()
 
-	return h, nil
+	return host, nil
 }
 
+// Connect establishes an outgoing connection to a peer
 func (h *Host) Connect(ctx context.Context, addr net.Addr) error {
-	orCtx, cancel := context.WithCancel(context.Background())
-	h.wg.Add(1)
+	// Create context that cancels when either host or request context is done
+	dialCtx, cancel := context.WithCancel(context.Background())
+	h.waitGroup.Add(1)
 	go func() {
-		defer h.wg.Done()
+		defer h.waitGroup.Done()
 		defer cancel()
 
 		select {
@@ -108,39 +112,39 @@ func (h *Host) Connect(ctx context.Context, addr net.Addr) error {
 	}()
 
 	tlsConfig := &tls.Config{
-		Certificates:       []tls.Certificate{*h.crt}, // Put a certificate to do client authentication
-		InsecureSkipVerify: true,                      // TODO: Verify the certifcate properly when it's implemented
+		Certificates:       []tls.Certificate{*h.certificate}, // Put a certificate to do client authentication
+		InsecureSkipVerify: true,                              // TODO: Verify the certifcate properly when it's implemented
 	}
 	quicConfig := &quic.Config{
 		EnableDatagrams: true,
 	}
-	conn, err := h.tr.Dial(orCtx, addr, tlsConfig, quicConfig)
+	conn, err := h.transport.Dial(dialCtx, addr, tlsConfig, quicConfig)
 	if err != nil {
 		return err
 	}
 
-	p, err := h.handleConnection(conn)
+	peerID, err := h.handleConnection(conn)
 	if err != nil {
 		return err
 	}
-	log.Infof("connected to %s at %s", p, addr)
+	log.Infof("connected to %s at %s", peerID, addr)
 	return nil
 }
 
 func (h *Host) LocalAddr() net.Addr {
-	return h.tr.Conn.LocalAddr()
+	return h.transport.Conn.LocalAddr()
 }
 
 func (h *Host) ID() peer.ID {
-	return h.pid
+	return h.peerID
 }
 
 func (h *Host) Close() error {
-	if err := h.tr.Close(); err != nil {
+	if err := h.transport.Close(); err != nil {
 		return err
 	}
 	h.cancel()
-	h.wg.Wait()
+	h.waitGroup.Wait()
 	return nil
 }
 
@@ -161,197 +165,206 @@ type Connection interface {
 	Receiver
 }
 
-type qConn struct {
-	c quic.Connection
+// quicConnection wraps a QUIC connection to implement Connection interface
+type quicConnection struct {
+	conn quic.Connection
 }
 
-func (qc *qConn) Send(buf []byte) error {
-	return qc.c.SendDatagram(buf)
+func (qc *quicConnection) Send(buf []byte) error {
+	return qc.conn.SendDatagram(buf)
 }
-func (qc *qConn) Receive(ctx context.Context) ([]byte, error) {
-	return qc.c.ReceiveDatagram(ctx)
+func (qc *quicConnection) Receive(ctx context.Context) ([]byte, error) {
+	return qc.conn.ReceiveDatagram(ctx)
 }
-func (qc *qConn) LocalAddr() net.Addr {
-	return qc.c.LocalAddr()
+func (qc *quicConnection) LocalAddr() net.Addr {
+	return qc.conn.LocalAddr()
 }
-func (qc *qConn) RemoteAddr() net.Addr {
-	return qc.c.RemoteAddr()
+func (qc *quicConnection) RemoteAddr() net.Addr {
+	return qc.conn.RemoteAddr()
 }
 
+// AddPeerHandler is called when a new peer connects
 type AddPeerHandler func(peer.ID, Connection)
+
+// RemovePeerHandler is called when a peer disconnects
 type RemovePeerHandler func(peer.ID)
 
+// SetPeerHandlers registers callbacks for peer connection events
 func (h *Host) SetPeerHandlers(addHandler AddPeerHandler, removeHandler RemovePeerHandler) {
-	h.lk.Lock()
-	defer h.lk.Unlock()
+	h.mutex.Lock()
+	defer h.mutex.Unlock()
 
 	h.addHandler = addHandler
 	h.removeHandler = removeHandler
 
-	// Retrospectively add all exiting peers
-	for p, conn := range h.peers {
-		h.addHandler(p, &qConn{c: conn})
+	// Notify about existing connections
+	for peerID, conn := range h.connections {
+		h.addHandler(peerID, &quicConnection{conn: conn})
 	}
 }
 
-// handleConnection handles the connection regardless of whether it's incoming or outgoing
+// handleConnection processes a new connection (incoming or outgoing)
 func (h *Host) handleConnection(conn quic.Connection) (peer.ID, error) {
-	// Validate the connection
-
-	// Derive the peer id from the certificate
-	peerCrt := conn.ConnectionState().TLS.PeerCertificates[0]
-	p, err := parsePeerIDFromCerticate(peerCrt)
+	// Extract peer ID from TLS certificate
+	peerCert := conn.ConnectionState().TLS.PeerCertificates[0]
+	peerID, err := parsePeerIDFromCertificate(peerCert)
 	if err != nil {
 		return "", fmt.Errorf("failed parsing for a peer ID from the TLS certificate: %v", err)
 	}
 
 	// Lock to read/write the peer set
-	h.lk.Lock()
-	defer h.lk.Unlock()
+	h.mutex.Lock()
+	defer h.mutex.Unlock()
 
-	// Check if there is already an onging connection with the peer
-	if _, ok := h.peers[p]; ok {
-		return "", fmt.Errorf("there is already an ongoing connection with peer %s", p)
+	// Prevent duplicate connections
+	if _, exists := h.connections[peerID]; exists {
+		return "", fmt.Errorf("already connected to peer %s", peerID)
 	}
 
-	// The connection is valid
-	h.peers[p] = conn
+	// Register new connection
+	h.connections[peerID] = conn
 	if h.addHandler != nil {
-		h.addHandler(p, &qConn{c: conn})
+		h.addHandler(peerID, &quicConnection{conn: conn})
 	}
 
-	h.wg.Add(1)
+	h.waitGroup.Add(1)
 	go func() {
-		defer h.wg.Done()
-		// Wait until the connection is closed and then remove the peer
+		defer h.waitGroup.Done()
+		// Clean up when connection closes
 		<-conn.Context().Done()
 
-		h.lk.Lock()
-		delete(h.peers, p)
+		h.mutex.Lock()
+		delete(h.connections, peerID)
 		if h.removeHandler != nil {
-			h.removeHandler(p)
+			h.removeHandler(peerID)
 		}
-		h.lk.Unlock()
+		h.mutex.Unlock()
 	}()
-	return p, nil
+	return peerID, nil
 }
 
-// processLoop handles all incoming connections
-func (h *Host) processLoop() {
-	defer h.wg.Done()
+// acceptLoop handles incoming connections
+func (h *Host) acceptLoop() {
+	defer h.waitGroup.Done()
 
-	log.Infof("listening for incoming connections at %s", h.ep)
-	log.Infof("my peer id is %s", h.pid)
+	log.Infof("listening on %s", h.endpoint)
+	log.Infof("peer ID: %s", h.peerID)
 
 	for {
-		conn, err := h.ln.Accept(h.ctx)
+		conn, err := h.listener.Accept(h.ctx)
 		if err != nil {
-			// If there is an error, it probably means the context has been cancelled
-			log.Warnf("quic-go listener returned an error in the Host processLoop: %v", err)
+			// Context cancelled, shutting down
+			log.Warnf("listener accept error: %v", err)
 			return
 		}
 
-		p, err := h.handleConnection(conn)
+		peerID, err := h.handleConnection(conn)
 		if err != nil {
-			log.Warnf("incoming connection is invalid: %v", err)
-			// Close the connection. The error code is always 0 for now
+			log.Warnf("failed to handle connection: %v", err)
 			conn.CloseWithError(0, err.Error())
 			continue
 		}
-		log.Infof("accepted a connection from %s at %s", p, conn.RemoteAddr())
+		log.Infof("accepted connection from %s at %s", peerID, conn.RemoteAddr())
 	}
 }
 
 func WithAddrPort(ep netip.AddrPort) HostOption {
 	return func(h *Host) error {
-		h.ep = net.UDPAddrFromAddrPort(ep)
+		h.endpoint = net.UDPAddrFromAddrPort(ep)
 		return nil
 	}
 }
 
-func WithIdentity(sk crypto.PrivateKey) HostOption {
+// WithIdentity sets the host's identity from a private key
+func WithIdentity(privateKey crypto.PrivateKey) HostOption {
 	return func(h *Host) error {
 		var pubkey ic.PubKey
 		var privkey ic.PrivKey
 		var err error
 
-		// Currently only ed25519 is supported in this function
-		switch k := sk.(type) {
+		// Extract peer ID from private key
+		switch key := privateKey.(type) {
 		case ed25519.PrivateKey:
-			privkey, err = ic.UnmarshalEd25519PrivateKey(k)
+			privkey, err = ic.UnmarshalEd25519PrivateKey(key)
 			pubkey = privkey.GetPublic()
 		default:
-			return fmt.Errorf("unsupported key type: %T", sk)
+			return fmt.Errorf("unsupported key type: %T", privateKey)
 		}
 		if err != nil {
 			return err
 		}
-		p, err := peer.IDFromPublicKey(pubkey)
+		peerID, err := peer.IDFromPublicKey(pubkey)
 		if err != nil {
 			return err
 		}
 
-		h.sk = sk
-		h.pid = p
+		h.privateKey = privateKey
+		h.peerID = peerID
 		return nil
 	}
 }
 
+// Host manages peer-to-peer QUIC connections
 type Host struct {
-	ctx    context.Context
-	cancel context.CancelFunc
-	wg     sync.WaitGroup
+	ctx       context.Context
+	cancel    context.CancelFunc
+	waitGroup sync.WaitGroup
 
-	lk sync.Mutex
+	mutex sync.Mutex // Protects connections map
 
-	peers map[peer.ID]quic.Connection
+	connections map[peer.ID]quic.Connection // Active peer connections
 
-	crt *tls.Certificate
-	ep  *net.UDPAddr
-	pid peer.ID
-	sk  crypto.PrivateKey
+	certificate *tls.Certificate  // Self-signed TLS certificate
+	endpoint    *net.UDPAddr      // Local UDP endpoint
+	peerID      peer.ID           // This host's peer ID
+	privateKey  crypto.PrivateKey // Identity private key
 
-	tr *quic.Transport
-	ln *quic.Listener
+	transport *quic.Transport // QUIC transport layer
+	listener  *quic.Listener  // Incoming connection listener
 
-	addHandler    AddPeerHandler
-	removeHandler RemovePeerHandler
+	addHandler    AddPeerHandler    // Called when peer connects
+	removeHandler RemovePeerHandler // Called when peer disconnects
 }
 
 // createTLSCertFromKey creates a self-signed certificate from a private key
 func createTLSCertFromKey(key crypto.PrivateKey) (*tls.Certificate, error) {
-	var pub crypto.PublicKey
+	var publicKey crypto.PublicKey
 
-	// Currently only ed25519 is supported in this function
-	switch k := key.(type) {
+	// Extract public key from private key
+	switch privateKey := key.(type) {
 	case ed25519.PrivateKey:
-		pub = k.Public()
+		publicKey = privateKey.Public()
 	default:
 		return nil, fmt.Errorf("unsupported key type: %T", key)
 	}
 
-	tmpl := x509.Certificate{
-		SerialNumber: big.NewInt(1),                      // This can be anything
-		Subject:      pkix.Name{CommonName: "localhost"}, // This can be anything
+	// Certificate template with minimal fields
+	template := x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{CommonName: "localhost"},
 		NotBefore:    time.Now(),
 		NotAfter:     time.Now().Add(365 * 24 * time.Hour),
 		KeyUsage:     x509.KeyUsageDigitalSignature,
 		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 	}
 
-	certDER, err := x509.CreateCertificate(rand.Reader, &tmpl, &tmpl, pub, key)
+	// Create certificate
+	certDER, err := x509.CreateCertificate(rand.Reader, &template, &template, publicKey, key)
 	if err != nil {
 		return nil, err
 	}
 
+	// Marshal private key
 	keyBytes, err := x509.MarshalPKCS8PrivateKey(key)
 	if err != nil {
 		return nil, err
 	}
 
+	// Encode to PEM format
 	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER})
 	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyBytes})
 
+	// Create TLS certificate
 	cert, err := tls.X509KeyPair(certPEM, keyPEM)
 	if err != nil {
 		return nil, err
@@ -359,27 +372,27 @@ func createTLSCertFromKey(key crypto.PrivateKey) (*tls.Certificate, error) {
 	return &cert, nil
 }
 
-// parsePeerIDFromCerticate derive the peer ID from a TLS certifiate
-func parsePeerIDFromCerticate(crt *x509.Certificate) (peer.ID, error) {
-	crtPubkey := crt.PublicKey
+// parsePeerIDFromCertificate extracts peer ID from a TLS certificate
+func parsePeerIDFromCertificate(cert *x509.Certificate) (peer.ID, error) {
+	certPublicKey := cert.PublicKey
 
 	var pubkey ic.PubKey
 	var err error
 
-	// Currently only ed25519 is supported in this function
-	switch k := crtPubkey.(type) {
+	// Convert certificate public key to peer ID
+	switch key := certPublicKey.(type) {
 	case ed25519.PublicKey:
-		pubkey, err = ic.UnmarshalEd25519PublicKey(k)
+		pubkey, err = ic.UnmarshalEd25519PublicKey(key)
 	default:
-		return "", fmt.Errorf("unsupported public key type: %T", crtPubkey)
+		return "", fmt.Errorf("unsupported public key type: %T", certPublicKey)
 	}
 	if err != nil {
 		return "", err
 	}
 
-	pid, err := peer.IDFromPublicKey(pubkey)
+	peerID, err := peer.IDFromPublicKey(pubkey)
 	if err != nil {
 		return "", err
 	}
-	return pid, nil
+	return peerID, nil
 }

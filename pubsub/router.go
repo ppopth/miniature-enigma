@@ -3,7 +3,7 @@ package pubsub
 import (
 	"context"
 
-	"github.com/ppopth/eth-ec-broadcast/pb"
+	"github.com/ethp2p/eth-ec-broadcast/pb"
 
 	"github.com/libp2p/go-libp2p/core/peer"
 )

@@ -1,4 +1,4 @@
-module github.com/ppopth/eth-ec-broadcast
+module github.com/ethp2p/eth-ec-broadcast
 
 go 1.23.3
 

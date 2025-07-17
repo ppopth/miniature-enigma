@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ppopth/p2p-broadcast/host"
-	"github.com/ppopth/p2p-broadcast/pubsub"
-	"github.com/ppopth/p2p-broadcast/rlnc/field"
+	"github.com/ethp2p/eth-ec-broadcast/host"
+	"github.com/ethp2p/eth-ec-broadcast/pubsub"
+	"github.com/ethp2p/eth-ec-broadcast/rlnc/field"
 )
 
 // TestRlncSparse tests RLNC message distribution in a sparsely connected network

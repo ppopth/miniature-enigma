@@ -6,8 +6,8 @@ import (
 	"net"
 	"net/netip"
 
-	"github.com/ppopth/eth-ec-broadcast/host"
-	"github.com/ppopth/eth-ec-broadcast/pubsub"
+	"github.com/ethp2p/eth-ec-broadcast/host"
+	"github.com/ethp2p/eth-ec-broadcast/pubsub"
 )
 
 var (
