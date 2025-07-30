@@ -319,3 +319,125 @@ func TestPrimeFieldLargePrime(t *testing.T) {
 		t.Errorf("Large value addition should wrap to zero, got %s", result)
 	}
 }
+
+// Benchmarks
+
+func BenchmarkPrimeFieldAdd(b *testing.B) {
+	field := setupLargePrimeField()
+
+	// Create some test elements
+	a := field.FromBytes(big.NewInt(1234567890).Bytes())
+	c := field.FromBytes(big.NewInt(9876543210).Bytes())
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = a.Add(c)
+	}
+}
+
+func BenchmarkPrimeFieldSub(b *testing.B) {
+	field := setupLargePrimeField()
+
+	a := field.FromBytes(big.NewInt(9876543210).Bytes())
+	c := field.FromBytes(big.NewInt(1234567890).Bytes())
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = a.Sub(c)
+	}
+}
+
+func BenchmarkPrimeFieldMul(b *testing.B) {
+	field := setupLargePrimeField()
+
+	a := field.FromBytes(big.NewInt(1234567890).Bytes())
+	c := field.FromBytes(big.NewInt(9876543210).Bytes())
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = a.Mul(c)
+	}
+}
+
+func BenchmarkPrimeFieldDiv(b *testing.B) {
+	field := setupLargePrimeField()
+
+	a := field.FromBytes(big.NewInt(9876543210).Bytes())
+	c := field.FromBytes(big.NewInt(1234567890).Bytes())
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		cInv := c.Inv()
+		_ = a.Mul(cInv)
+	}
+}
+
+func BenchmarkPrimeFieldInv(b *testing.B) {
+	field := setupLargePrimeField()
+
+	a := field.FromBytes(big.NewInt(1234567890).Bytes())
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = a.Inv()
+	}
+}
+
+func BenchmarkPrimeFieldFromBytes(b *testing.B) {
+	field := setupLargePrimeField()
+	bytes := big.NewInt(1234567890).Bytes()
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = field.FromBytes(bytes)
+	}
+}
+
+func BenchmarkPrimeFieldBytes(b *testing.B) {
+	field := setupLargePrimeField()
+	elem := field.FromBytes(big.NewInt(1234567890).Bytes())
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = elem.Bytes()
+	}
+}
+
+func BenchmarkPrimeFieldLargePrime(b *testing.B) {
+	// Use the 256-bit prime from the default configuration
+	p := new(big.Int).Exp(big.NewInt(2), big.NewInt(256), nil)
+	p.Add(p, big.NewInt(297))
+	field := NewPrimeField(p)
+
+	// Create some large elements
+	// Create non-zero byte arrays first, then convert to field elements
+	aBytes := make([]byte, 32) // 32 bytes = 256 bits
+	for i := range aBytes {
+		aBytes[i] = byte(i + 1) // Start from 1 to avoid zero
+	}
+	a := field.FromBytes(aBytes)
+
+	cBytes := make([]byte, 32)
+	for i := range cBytes {
+		cBytes[i] = byte(255 - i)
+	}
+	c := field.FromBytes(cBytes)
+
+	b.Run("Add", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			_ = a.Add(c)
+		}
+	})
+
+	b.Run("Mul", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			_ = a.Mul(c)
+		}
+	})
+
+	b.Run("Inv", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			_ = a.Inv()
+		}
+	})
+}

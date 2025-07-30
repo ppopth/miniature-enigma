@@ -50,8 +50,9 @@ type RlncEncoderConfig struct {
 	// Max coeficient bits used in linear combinations.
 	MaxCoefficientBits int
 	// Finite field for linear algebra operations
-	Field    field.Field
-	verifier ChunkVerifier
+	Field field.Field
+	// Chunk verifier for verification (optional)
+	Verifier ChunkVerifier
 }
 
 type RlncEncoder struct {
@@ -101,7 +102,7 @@ func (r *RlncEncoder) VerifyThenAddChunk(chunk encode.Chunk) bool {
 	}
 
 	// Call internal verifier if available
-	if r.config.verifier != nil && !r.config.verifier.Verify(&rlncChunk) {
+	if r.config.Verifier != nil && !r.config.Verifier.Verify(&rlncChunk) {
 		return false
 	}
 
@@ -192,9 +193,9 @@ func (r *RlncEncoder) EmitChunk(messageID string) (encode.Chunk, error) {
 
 	// Let the verifier handle combination of extra data (if any)
 	var extraData []byte
-	if r.config.verifier != nil {
+	if r.config.Verifier != nil {
 		var err error
-		extraData, err = r.config.verifier.CombineExtras(rlncChunks, randomFactors)
+		extraData, err = r.config.Verifier.CombineExtras(rlncChunks, randomFactors)
 		if err != nil {
 			return Chunk{}, err
 		}
@@ -250,8 +251,8 @@ func (r *RlncEncoder) GenerateThenAddChunks(messageID string, message []byte) (i
 	}
 
 	// Generate extra fields
-	if r.config.verifier != nil {
-		extras, err := r.config.verifier.GenerateExtras(chunkBuffers)
+	if r.config.Verifier != nil {
+		extras, err := r.config.Verifier.GenerateExtras(chunkBuffers)
 		if err != nil {
 			return 0, err
 		}

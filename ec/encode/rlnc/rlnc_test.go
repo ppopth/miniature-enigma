@@ -1,6 +1,7 @@
 package rlnc
 
 import (
+	"fmt"
 	"math/big"
 	"slices"
 	"testing"
@@ -430,5 +431,273 @@ func TestRlncEncoderBinaryField(t *testing.T) {
 
 	if !slices.Equal(reconstructed, msg) {
 		t.Fatalf("reconstructed message doesn't match original with binary field: got %v, want %v", reconstructed, msg)
+	}
+}
+
+// Benchmarks
+
+func BenchmarkRlncGenerateThenAddChunks(b *testing.B) {
+	// Use default large prime field
+	p := new(big.Int).Exp(big.NewInt(2), big.NewInt(256), nil)
+	p.Add(p, big.NewInt(297))
+	f := field.NewPrimeField(p)
+
+	config := &RlncEncoderConfig{
+		MessageChunkSize:   1024,
+		NetworkChunkSize:   1030,
+		ElementsPerChunk:   8 * 1024 / f.BitsPerDataElement(),
+		MaxCoefficientBits: 16,
+		Field:              f,
+	}
+
+	encoder, err := NewRlncEncoder(config)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	// Test with different message sizes
+	sizes := []int{1024, 4096, 16384, 65536}
+	for _, size := range sizes {
+		msg := make([]byte, size)
+		for i := range msg {
+			msg[i] = byte(i % 256)
+		}
+
+		b.Run(fmt.Sprintf("size=%d", size), func(b *testing.B) {
+			b.SetBytes(int64(size))
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				messageID := fmt.Sprintf("msg-%d", i)
+				_, err := encoder.GenerateThenAddChunks(messageID, msg)
+				if err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+func BenchmarkRlncEmitChunk(b *testing.B) {
+	// Use default large prime field
+	p := new(big.Int).Exp(big.NewInt(2), big.NewInt(256), nil)
+	p.Add(p, big.NewInt(297))
+	f := field.NewPrimeField(p)
+
+	config := &RlncEncoderConfig{
+		MessageChunkSize:   1024,
+		NetworkChunkSize:   1030,
+		ElementsPerChunk:   8 * 1024 / f.BitsPerDataElement(),
+		MaxCoefficientBits: 16,
+		Field:              f,
+	}
+
+	encoder, err := NewRlncEncoder(config)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	// Generate a message with multiple chunks
+	msg := make([]byte, 16384) // 16 chunks
+	for i := range msg {
+		msg[i] = byte(i % 256)
+	}
+	messageID := "bench-msg"
+
+	_, err = encoder.GenerateThenAddChunks(messageID, msg)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, err := encoder.EmitChunk(messageID)
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkRlncVerifyThenAddChunk(b *testing.B) {
+	// Use default large prime field
+	p := new(big.Int).Exp(big.NewInt(2), big.NewInt(256), nil)
+	p.Add(p, big.NewInt(297))
+	f := field.NewPrimeField(p)
+
+	config := &RlncEncoderConfig{
+		MessageChunkSize:   1024,
+		NetworkChunkSize:   1030,
+		ElementsPerChunk:   8 * 1024 / f.BitsPerDataElement(),
+		MaxCoefficientBits: 16,
+		Field:              f,
+	}
+
+	encoder, err := NewRlncEncoder(config)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	// Generate chunks from another encoder
+	sourceEncoder, _ := NewRlncEncoder(config)
+	msg := make([]byte, 4096)
+	for i := range msg {
+		msg[i] = byte(i % 256)
+	}
+	messageID := "bench-msg"
+	_, _ = sourceEncoder.GenerateThenAddChunks(messageID, msg)
+
+	// Create composed chunks
+	var composedChunks []encode.Chunk
+	for i := 0; i < 8; i++ {
+		chunk, _ := sourceEncoder.EmitChunk(messageID)
+		composedChunks = append(composedChunks, chunk)
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		// Use a chunk from the composed chunks
+		chunk := composedChunks[i%len(composedChunks)]
+		encoder.VerifyThenAddChunk(chunk)
+	}
+}
+
+func BenchmarkRlncReconstructMessage(b *testing.B) {
+	// Use default large prime field
+	p := new(big.Int).Exp(big.NewInt(2), big.NewInt(256), nil)
+	p.Add(p, big.NewInt(297))
+	f := field.NewPrimeField(p)
+
+	config := &RlncEncoderConfig{
+		MessageChunkSize:   1024,
+		NetworkChunkSize:   1030,
+		ElementsPerChunk:   8 * 1024 / f.BitsPerDataElement(),
+		MaxCoefficientBits: 16,
+		Field:              f,
+	}
+
+	// Test reconstruction with different message sizes
+	sizes := []int{1024, 4096, 16384}
+	for _, size := range sizes {
+		b.Run(fmt.Sprintf("size=%d", size), func(b *testing.B) {
+			b.StopTimer()
+			msg := make([]byte, size)
+			for i := range msg {
+				msg[i] = byte(i % 256)
+			}
+
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				b.StopTimer()
+				encoder, _ := NewRlncEncoder(config)
+				messageID := fmt.Sprintf("msg-%d", i)
+				_, _ = encoder.GenerateThenAddChunks(messageID, msg)
+				chunks := encoder.GetChunks(messageID)
+
+				// Create a new encoder to simulate receiving
+				decoder, _ := NewRlncEncoder(config)
+
+				// Add minimum required chunks
+				for _, chunk := range chunks {
+					decoder.VerifyThenAddChunk(chunk)
+				}
+
+				b.StartTimer()
+				_, err := decoder.ReconstructMessage(messageID)
+				if err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+func BenchmarkRlncEncodeDecode(b *testing.B) {
+	// Use default large prime field
+	p := new(big.Int).Exp(big.NewInt(2), big.NewInt(256), nil)
+	p.Add(p, big.NewInt(297))
+	f := field.NewPrimeField(p)
+
+	config := &RlncEncoderConfig{
+		MessageChunkSize:   1024,
+		NetworkChunkSize:   1030,
+		ElementsPerChunk:   8 * 1024 / f.BitsPerDataElement(),
+		MaxCoefficientBits: 16,
+		Field:              f,
+	}
+
+	encoder, err := NewRlncEncoder(config)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	// Create a test chunk
+	msg := make([]byte, 1024)
+	for i := range msg {
+		msg[i] = byte(i % 256)
+	}
+	messageID := "bench-msg"
+	_, _ = encoder.GenerateThenAddChunks(messageID, msg)
+	chunks := encoder.GetChunks(messageID)
+	chunk := chunks[0]
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		// Encode
+		data := chunk.Data()
+		extra := chunk.EncodeExtra()
+
+		// Decode
+		_, err := encoder.DecodeChunk(messageID, data, extra)
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkRlncWithBinaryField(b *testing.B) {
+	f := field.NewBinaryFieldGF2_32()
+
+	config := &RlncEncoderConfig{
+		MessageChunkSize:   1024,
+		NetworkChunkSize:   1030,
+		ElementsPerChunk:   8 * 1024 / f.BitsPerDataElement(),
+		MaxCoefficientBits: 16,
+		Field:              f,
+	}
+
+	// Create separate encoder and decoder
+	encoder, err := NewRlncEncoder(config)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	decoder, err := NewRlncEncoder(config)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	msg := make([]byte, 4096)
+	for i := range msg {
+		msg[i] = byte(i % 256)
+	}
+
+	b.SetBytes(int64(len(msg)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		messageID := fmt.Sprintf("msg-%d", i)
+		numChunks, err := encoder.GenerateThenAddChunks(messageID, msg)
+		if err != nil {
+			b.Fatal(err)
+		}
+
+		// Encoder emits chunks, decoder verifies and adds them
+		for j := 0; j < numChunks; j++ {
+			chunk, _ := encoder.EmitChunk(messageID)
+			decoder.VerifyThenAddChunk(chunk)
+		}
+
+		_, err = decoder.ReconstructMessage(messageID)
+		if err != nil {
+			b.Fatal(err)
+		}
 	}
 }

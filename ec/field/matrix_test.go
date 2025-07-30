@@ -1,6 +1,7 @@
 package field
 
 import (
+	"fmt"
 	"math/big"
 	"math/rand"
 	"testing"
@@ -335,5 +336,160 @@ func TestIsLinearlyIndependent_RandomWithDependency(t *testing.T) {
 	}
 	if IsLinearlyIndependent(V, field) {
 		t.Errorf("Should be dependent: third vector is sum of first two")
+	}
+}
+
+// Benchmarks
+
+func BenchmarkIsLinearlyIndependent(b *testing.B) {
+	field := NewPrimeField(big.NewInt(4_294_967_311))
+
+	sizes := []int{4, 8, 16, 32}
+	for _, size := range sizes {
+		// Create random vectors
+		vectors := make([][]Element, size)
+		for i := 0; i < size; i++ {
+			vectors[i] = make([]Element, size)
+			for j := 0; j < size; j++ {
+				val := rand.Int63n(1000000)
+				vectors[i][j] = field.FromBytes(big.NewInt(val).Bytes())
+			}
+		}
+
+		b.Run(fmt.Sprintf("vectors=%d", size), func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				_ = IsLinearlyIndependent(vectors, field)
+			}
+		})
+	}
+}
+
+func BenchmarkMatrixMultiply(b *testing.B) {
+	field := NewPrimeField(big.NewInt(4_294_967_311))
+
+	sizes := []int{4, 8, 16, 32, 64}
+	for _, size := range sizes {
+		// Create random matrices
+		A := make([][]Element, size)
+		B := make([][]Element, size)
+		for i := 0; i < size; i++ {
+			A[i] = make([]Element, size)
+			B[i] = make([]Element, size)
+			for j := 0; j < size; j++ {
+				valA := rand.Int63n(1000000)
+				valB := rand.Int63n(1000000)
+				A[i][j] = field.FromBytes(big.NewInt(valA).Bytes())
+				B[i][j] = field.FromBytes(big.NewInt(valB).Bytes())
+			}
+		}
+
+		b.Run(fmt.Sprintf("size=%d", size), func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				_ = matrixMultiply(A, B, field)
+			}
+		})
+	}
+}
+
+func BenchmarkInvertMatrix(b *testing.B) {
+	field := NewPrimeField(big.NewInt(4_294_967_311))
+
+	sizes := []int{4, 8, 16, 32, 64}
+	for _, size := range sizes {
+		// Create a random invertible matrix
+		A := make([][]Element, size)
+		for i := 0; i < size; i++ {
+			A[i] = make([]Element, size)
+			for j := 0; j < size; j++ {
+				val := rand.Int63n(1000000)
+				A[i][j] = field.FromBytes(big.NewInt(val).Bytes())
+			}
+		}
+
+		// Make sure the matrix is invertible by setting diagonal to non-zero
+		for i := 0; i < size; i++ {
+			A[i][i] = field.FromBytes(big.NewInt(int64(i + 1)).Bytes())
+		}
+
+		b.Run(fmt.Sprintf("size=%d", size), func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				// Create a copy of A since InvertMatrix modifies it
+				Acopy := make([][]Element, size)
+				for j := 0; j < size; j++ {
+					Acopy[j] = make([]Element, size)
+					copy(Acopy[j], A[j])
+				}
+				_, err := InvertMatrix(Acopy, field)
+				if err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+func BenchmarkRecoverVectors(b *testing.B) {
+	field := NewPrimeField(big.NewInt(4_294_967_311))
+
+	// Test different matrix sizes and number of result vectors
+	sizes := []struct {
+		n, m int // n x n matrix, m result vectors
+	}{
+		{4, 1},
+		{4, 4},
+		{8, 1},
+		{8, 8},
+		{16, 1},
+		{16, 4},
+		{32, 1},
+		{32, 4},
+	}
+
+	for _, size := range sizes {
+		// Create square coefficient matrix A (n x n)
+		A := make([][]Element, size.n)
+		for i := 0; i < size.n; i++ {
+			A[i] = make([]Element, size.n)
+			for j := 0; j < size.n; j++ {
+				val := rand.Int63n(1000000)
+				A[i][j] = field.FromBytes(big.NewInt(val).Bytes())
+			}
+		}
+
+		// Make sure the matrix is invertible by setting diagonal to non-zero
+		for i := 0; i < size.n; i++ {
+			A[i][i] = field.FromBytes(big.NewInt(int64(i + 1)).Bytes())
+		}
+
+		// Create result vectors R (n x m)
+		R := make([][]Element, size.n)
+		for i := 0; i < size.n; i++ {
+			R[i] = make([]Element, size.m)
+			for j := 0; j < size.m; j++ {
+				val := rand.Int63n(1000000)
+				R[i][j] = field.FromBytes(big.NewInt(val).Bytes())
+			}
+		}
+
+		b.Run(fmt.Sprintf("n=%d_m=%d", size.n, size.m), func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				// Create copies since RecoverVectors modifies the inputs
+				Acopy := make([][]Element, size.n)
+				for j := 0; j < size.n; j++ {
+					Acopy[j] = make([]Element, size.n)
+					copy(Acopy[j], A[j])
+				}
+				Rcopy := make([][]Element, size.n)
+				for j := 0; j < size.n; j++ {
+					Rcopy[j] = make([]Element, size.m)
+					copy(Rcopy[j], R[j])
+				}
+
+				_, err := RecoverVectors(Acopy, Rcopy, field)
+				if err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
 	}
 }

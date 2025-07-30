@@ -322,3 +322,122 @@ func TestBinaryFieldCustomIrreducible(t *testing.T) {
 		t.Errorf("Custom field multiplication result out of bounds: %s", result)
 	}
 }
+
+// Benchmarks
+
+func BenchmarkBinaryFieldAdd(b *testing.B) {
+	field := setupBinaryField()
+
+	// Create some test elements
+	a := field.FromBytes([]byte{0x12, 0x34, 0x56, 0x78})
+	c := field.FromBytes([]byte{0x9A, 0xBC, 0xDE, 0xF0})
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = a.Add(c)
+	}
+}
+
+func BenchmarkBinaryFieldSub(b *testing.B) {
+	field := setupBinaryField()
+
+	a := field.FromBytes([]byte{0x9A, 0xBC, 0xDE, 0xF0})
+	c := field.FromBytes([]byte{0x12, 0x34, 0x56, 0x78})
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = a.Sub(c)
+	}
+}
+
+func BenchmarkBinaryFieldMul(b *testing.B) {
+	field := setupBinaryField()
+
+	a := field.FromBytes([]byte{0x12, 0x34, 0x56, 0x78})
+	c := field.FromBytes([]byte{0x9A, 0xBC, 0xDE, 0xF0})
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = a.Mul(c)
+	}
+}
+
+func BenchmarkBinaryFieldDiv(b *testing.B) {
+	field := setupBinaryField()
+
+	a := field.FromBytes([]byte{0x9A, 0xBC, 0xDE, 0xF0})
+	c := field.FromBytes([]byte{0x12, 0x34, 0x56, 0x78})
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		cInv := c.Inv()
+		_ = a.Mul(cInv)
+	}
+}
+
+func BenchmarkBinaryFieldInv(b *testing.B) {
+	field := setupBinaryField()
+
+	a := field.FromBytes([]byte{0x12, 0x34, 0x56, 0x78})
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = a.Inv()
+	}
+}
+
+func BenchmarkBinaryFieldFromBytes(b *testing.B) {
+	field := setupBinaryField()
+	bytes := []byte{0x12, 0x34, 0x56, 0x78}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = field.FromBytes(bytes)
+	}
+}
+
+func BenchmarkBinaryFieldBytes(b *testing.B) {
+	field := setupBinaryField()
+	elem := field.FromBytes([]byte{0x12, 0x34, 0x56, 0x78})
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = elem.Bytes()
+	}
+}
+
+func BenchmarkBinaryFieldComparison(b *testing.B) {
+	// Compare GF(2^32) vs GF(2^8) performance
+	field32 := NewBinaryFieldGF2_32()
+	field8 := NewBinaryField(8, big.NewInt(0x11D)) // x^8 + x^4 + x^3 + x^2 + 1
+
+	a32 := field32.FromBytes([]byte{0x12, 0x34, 0x56, 0x78})
+	c32 := field32.FromBytes([]byte{0x9A, 0xBC, 0xDE, 0xF0})
+
+	a8 := field8.FromBytes([]byte{0x42})
+	c8 := field8.FromBytes([]byte{0x73})
+
+	b.Run("GF2_32/Mul", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			_ = a32.Mul(c32)
+		}
+	})
+
+	b.Run("GF2_8/Mul", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			_ = a8.Mul(c8)
+		}
+	})
+
+	b.Run("GF2_32/Inv", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			_ = a32.Inv()
+		}
+	})
+
+	b.Run("GF2_8/Inv", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			_ = a8.Inv()
+		}
+	})
+}
