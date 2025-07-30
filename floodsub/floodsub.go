@@ -33,8 +33,8 @@ type FloodSubRouter struct {
 	receivedMessages [][]byte                         // Buffer of received messages
 }
 
-// NewFloodsub creates a new FloodSub router with the given message ID function
-func NewFloodsub(messageIdFunc MsgIdFunc) *FloodSubRouter {
+// NewFloodsubRouter creates a new FloodSub router with the given message ID function
+func NewFloodsubRouter(messageIdFunc MsgIdFunc) *FloodSubRouter {
 	ctx, cancel := context.WithCancel(context.Background())
 	router := &FloodSubRouter{
 		ctx:    ctx,

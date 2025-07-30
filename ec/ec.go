@@ -1,0 +1,306 @@
+package ec
+
+import (
+	"context"
+	"crypto/sha256"
+	"fmt"
+	"maps"
+	mrand "math/rand"
+	"slices"
+	"sync"
+
+	"github.com/ethp2p/eth-ec-broadcast/ec/encode"
+	"github.com/ethp2p/eth-ec-broadcast/pb"
+	"github.com/ethp2p/eth-ec-broadcast/pubsub"
+
+	logging "github.com/ipfs/go-log/v2"
+	"github.com/libp2p/go-libp2p/core/peer"
+)
+
+var log = logging.Logger("ec")
+
+// MsgIdFunc generates unique identifiers for messages
+type MsgIdFunc func([]byte) string
+
+// EcOption configures an EC router during construction
+type EcOption func(*EcRouter) error
+
+// NewEcRouter creates a new EC router with the given encoder and applies options
+func NewEcRouter(encoder encode.Encoder, opts ...EcOption) (*EcRouter, error) {
+	if encoder == nil {
+		return nil, fmt.Errorf("encoder is required")
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	router := &EcRouter{
+		ctx:    ctx,
+		cancel: cancel,
+
+		encoder:       encoder,
+		messageIDFunc: hashSha256, // SHA-256 gives good distribution for message IDs
+
+		peers: make(map[peer.ID]pubsub.TopicSendFunc),
+	}
+
+	router.cond = sync.NewCond(&router.mutex)
+
+	// Set reasonable defaults for router-specific parameters
+	router.params = EcParams{
+		PublishMultiplier: 2, // Send 2x redundancy when publishing
+		ForwardMultiplier: 2, // Forward 2 chunks per useful chunk received
+	}
+
+	for _, opt := range opts {
+		err := opt(router)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return router, nil
+}
+
+// WithEcParams sets custom EC parameters
+func WithEcParams(params EcParams) EcOption {
+	return func(router *EcRouter) error {
+		router.params = params
+		return nil
+	}
+}
+
+// WithMessageIdFn sets a custom message ID function (default is SHA-256)
+func WithMessageIdFn(messageIDFunc MsgIdFunc) EcOption {
+	return func(router *EcRouter) error {
+		router.messageIDFunc = messageIDFunc
+		return nil
+	}
+}
+
+// EcRouter implements Erasure Coding for efficient broadcast
+// The core idea: encode messages as linear combinations over finite fields,
+// allowing any k linearly independent chunks to reconstruct k original chunks
+type EcRouter struct {
+	ctx    context.Context
+	cancel context.CancelFunc
+
+	encoder encode.Encoder // Encoder for erasure coding operations
+
+	mutex sync.Mutex // Protects all mutable state below
+	cond  *sync.Cond // For blocking on message receipt
+
+	params        EcParams  // Configuration parameters
+	messageIDFunc MsgIdFunc // How we identify messages
+
+	peers map[peer.ID]pubsub.TopicSendFunc // Active peer connections
+
+	received [][]byte // Queue of fully reconstructed messages
+}
+
+type EcParams struct {
+	// Multiplier of the number of chunks sent out in total, when publish. For example, when
+	// the multiplier is 2 and the number of chunks of the published message is 8, there will
+	// be 2*8 = 16 chunks sent in total.
+	PublishMultiplier int
+	// Every time a new useful chunk is receive, we send out as many new chunks as this number.
+	ForwardMultiplier int
+}
+
+// Publish takes a message, splits it into chunks, and broadcasts linear combinations
+func (router *EcRouter) Publish(message []byte) error {
+	messageID := router.messageIDFunc(message)
+
+	// Use encoder to generate chunks
+	numChunks, err := router.encoder.GenerateThenAddChunks(messageID, message)
+	if err != nil {
+		return fmt.Errorf("failed to generate chunks: %w", err)
+	}
+
+	router.mutex.Lock()
+	router.received = append(router.received, message)
+	router.cond.Signal()
+
+	sendFuncs := slices.Collect(maps.Values(router.peers))
+	// Shuffle the peers
+	mrand.Shuffle(len(sendFuncs), func(i, j int) {
+		sendFuncs[i], sendFuncs[j] = sendFuncs[j], sendFuncs[i]
+	})
+	router.mutex.Unlock()
+
+	sendFuncIndex := 0
+
+	// Broadcast random linear combinations to peers (round-robin for load balancing)
+	for i := 0; i < numChunks*router.params.PublishMultiplier; i++ {
+		// Create a random linear combination for this transmission
+		combinedChunk, err := router.encoder.EmitChunk(messageID)
+		if err != nil {
+			log.Warnf("error publishing; %s", err)
+			// Skipping to the next peer
+			continue
+		}
+		// send the combined chunk to that peer
+		rpcChunk := &pb.EcRpc_Chunk{
+			MessageID: &messageID,
+			Data:      combinedChunk.Data(),
+			Extra:     combinedChunk.EncodeExtra(),
+		}
+		sendFuncs[sendFuncIndex](&pb.TopicRpc{
+			Ec: &pb.EcRpc{
+				Chunks: []*pb.EcRpc_Chunk{rpcChunk},
+			},
+		})
+
+		sendFuncIndex++
+		sendFuncIndex %= len(sendFuncs)
+	}
+	return nil
+}
+
+// sendChunk forwards a random linear combination to help message propagation
+func (router *EcRouter) sendChunk(messageID string) {
+	router.mutex.Lock()
+	defer router.mutex.Unlock()
+
+	combinedChunk, err := router.encoder.EmitChunk(messageID)
+	if err != nil {
+		log.Warnf("error forwarding; %s", err)
+		return
+	}
+	// Send the combined chunk to that peer
+	rpcChunk := &pb.EcRpc_Chunk{
+		MessageID: &messageID,
+		Data:      combinedChunk.Data(),
+		Extra:     combinedChunk.EncodeExtra(),
+	}
+	// Pick a random peer
+	peerIndex := slices.Collect(maps.Keys(router.peers))[mrand.Intn(len(router.peers))]
+	// Send the rpc
+	router.peers[peerIndex](&pb.TopicRpc{
+		Ec: &pb.EcRpc{
+			Chunks: []*pb.EcRpc_Chunk{rpcChunk},
+		},
+	})
+}
+
+// notifyMessage tries to reconstruct a complete message and queue it for delivery
+func (router *EcRouter) notifyMessage(messageID string) {
+	router.mutex.Lock()
+	defer router.mutex.Unlock()
+
+	reconstructedMessage, err := router.encoder.ReconstructMessage(messageID)
+	if err != nil {
+		// Quietly return
+		return
+	}
+
+	router.received = append(router.received, reconstructedMessage)
+	router.cond.Signal()
+}
+
+// Next blocks until a complete message is reconstructed and returns it
+func (router *EcRouter) Next(ctx context.Context) ([]byte, error) {
+	router.mutex.Lock()
+	defer router.mutex.Unlock()
+
+	if len(router.received) > 0 {
+		message := router.received[0]
+		router.received = router.received[1:]
+		return message, nil
+	}
+
+	unregisterAfterFunc := context.AfterFunc(ctx, func() {
+		// Wake up all the waiting routines. The only routine that corresponds
+		// to this Next call will return from the function. Note that this can
+		// be expensive, if there are too many waiting Wait calls.
+		router.cond.Broadcast()
+	})
+	defer unregisterAfterFunc()
+
+	for len(router.received) == 0 {
+		router.cond.Wait()
+		select {
+		case <-ctx.Done():
+			return nil, fmt.Errorf("the call has been cancelled")
+		case <-router.ctx.Done():
+			return nil, fmt.Errorf("the router has been closed")
+		default:
+		}
+	}
+	message := router.received[0]
+	router.received = router.received[1:]
+	return message, nil
+}
+
+// AddPeer registers a new peer for message distribution
+func (router *EcRouter) AddPeer(peerID peer.ID, sendFunc pubsub.TopicSendFunc) {
+	router.mutex.Lock()
+	defer router.mutex.Unlock()
+
+	router.peers[peerID] = sendFunc
+}
+
+// RemovePeer unregisters a peer (cleanup when they disconnect)
+func (router *EcRouter) RemovePeer(peerID peer.ID) {
+	router.mutex.Lock()
+	defer router.mutex.Unlock()
+
+	delete(router.peers, peerID)
+}
+
+// HandleIncomingRPC processes chunks from peers and manages forwarding
+// This is where we check for linear independence and trigger reconstruction
+func (router *EcRouter) HandleIncomingRPC(peerID peer.ID, topicRPC *pb.TopicRpc) {
+	router.mutex.Lock()
+
+	ecRPC := topicRPC.GetEc()
+	messagesToNotify := make(map[string]struct{})
+	messagesToSend := make(map[string]int) // The number of chunks to send out indexed by message IDs
+	for _, chunkRPC := range ecRPC.GetChunks() {
+		messageID := chunkRPC.GetMessageID()
+		chunkData := chunkRPC.GetData()
+		extraData := chunkRPC.GetExtra()
+
+		// Decode the chunk using the encoder
+		decodedChunk, err := router.encoder.DecodeChunk(messageID, chunkData, extraData)
+		if err != nil {
+			continue
+		}
+
+		// Use encoder to verify and add the chunk
+		if !router.encoder.VerifyThenAddChunk(decodedChunk) {
+			continue
+		}
+
+		// Useful chunk! Forward it to help network propagation
+		messagesToSend[messageID] += router.params.ForwardMultiplier
+		// Check if we have enough chunks to reconstruct the message
+		if router.encoder.GetChunkCount(messageID) >= router.encoder.GetMinChunksForReconstruction(messageID) {
+			if _, err := router.encoder.ReconstructMessage(messageID); err == nil {
+				messagesToNotify[messageID] = struct{}{}
+			}
+		}
+	}
+	router.mutex.Unlock()
+
+	for messageID, chunkCount := range messagesToSend {
+		for i := 0; i < chunkCount; i++ {
+			router.sendChunk(messageID)
+		}
+	}
+	for messageID := range messagesToNotify {
+		router.notifyMessage(messageID)
+	}
+}
+
+// Close shuts down the router and wakes up any waiting Next() calls
+func (router *EcRouter) Close() error {
+	router.cancel()
+	router.cond.Broadcast()
+	return nil
+}
+
+// hashSha256 is our default message ID function - SHA-256 hex string
+func hashSha256(data []byte) string {
+	hasher := sha256.New()
+	hasher.Write(data)
+	return fmt.Sprintf("%x", hasher.Sum(nil))
+}

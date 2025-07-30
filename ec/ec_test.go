@@ -1,4 +1,4 @@
-package rlnc
+package ec
 
 import (
 	"context"
@@ -11,9 +11,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethp2p/eth-ec-broadcast/ec/encode/rlnc"
+	"github.com/ethp2p/eth-ec-broadcast/ec/field"
 	"github.com/ethp2p/eth-ec-broadcast/host"
 	"github.com/ethp2p/eth-ec-broadcast/pubsub"
-	"github.com/ethp2p/eth-ec-broadcast/rlnc/field"
 )
 
 // TestRlncSparse tests RLNC message distribution in a sparsely connected network
@@ -25,16 +26,25 @@ func TestRlncSparse(t *testing.T) {
 	var subs []*pubsub.Subscription
 	for _, ps := range psubs {
 		f := field.NewPrimeField(big.NewInt(4_294_967_311))
-		c, err := NewRlnc(
-			WithRlncParams(RlncParams{
-				MessageChunkSize:   8,
-				NetworkChunkSize:   9,
-				ElementsPerChunk:   2,
-				MaxCoefficientBits: 16,
-				PublishMultiplier:  4,
-				ForwardMultiplier:  8,
+
+		// Create RLNC encoder
+		rlncConfig := &rlnc.RlncEncoderConfig{
+			MessageChunkSize:   8,
+			NetworkChunkSize:   9,
+			ElementsPerChunk:   2,
+			MaxCoefficientBits: 16,
+			Field:              f,
+		}
+		encoder, err := rlnc.NewRlncEncoder(rlncConfig)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		c, err := NewEcRouter(encoder,
+			WithEcParams(EcParams{
+				PublishMultiplier: 4,
+				ForwardMultiplier: 8,
 			}),
-			WithField(f),
 		)
 		if err != nil {
 			t.Fatal(err)
@@ -106,16 +116,25 @@ func TestRlncDense(t *testing.T) {
 	var subs []*pubsub.Subscription
 	for _, ps := range psubs {
 		f := field.NewPrimeField(big.NewInt(4_294_967_311))
-		c, err := NewRlnc(
-			WithRlncParams(RlncParams{
-				MessageChunkSize:   8,
-				NetworkChunkSize:   9,
-				ElementsPerChunk:   2,
-				MaxCoefficientBits: 16,
-				PublishMultiplier:  4,
-				ForwardMultiplier:  8,
+
+		// Create RLNC encoder
+		rlncConfig := &rlnc.RlncEncoderConfig{
+			MessageChunkSize:   8,
+			NetworkChunkSize:   9,
+			ElementsPerChunk:   2,
+			MaxCoefficientBits: 16,
+			Field:              f,
+		}
+		encoder, err := rlnc.NewRlncEncoder(rlncConfig)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		c, err := NewEcRouter(encoder,
+			WithEcParams(EcParams{
+				PublishMultiplier: 4,
+				ForwardMultiplier: 8,
 			}),
-			WithField(f),
 		)
 		if err != nil {
 			t.Fatal(err)
@@ -185,19 +204,28 @@ func TestRlncPublish(t *testing.T) {
 
 	var topics []*pubsub.Topic
 	var subs []*pubsub.Subscription
-	var routers []*RlncRouter
+	var routers []*EcRouter
 
 	for _, ps := range psubs {
 		f := field.NewPrimeField(big.NewInt(4_294_967_311))
-		c, err := NewRlnc(
-			WithRlncParams(RlncParams{
-				MessageChunkSize:   8,
-				NetworkChunkSize:   9,
-				ElementsPerChunk:   2,
-				MaxCoefficientBits: 16,
-				PublishMultiplier:  4,
+
+		// Create RLNC encoder
+		rlncConfig := &rlnc.RlncEncoderConfig{
+			MessageChunkSize:   8,
+			NetworkChunkSize:   9,
+			ElementsPerChunk:   2,
+			MaxCoefficientBits: 16,
+			Field:              f,
+		}
+		encoder, err := rlnc.NewRlncEncoder(rlncConfig)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		c, err := NewEcRouter(encoder,
+			WithEcParams(EcParams{
+				PublishMultiplier: 4,
 			}),
-			WithField(f),
 		)
 		if err != nil {
 			t.Fatal(err)
@@ -230,16 +258,17 @@ func TestRlncPublish(t *testing.T) {
 	}
 	time.Sleep(200 * time.Millisecond)
 	for i, router := range routers[1:] {
-		if len(router.chunks) != 1 {
-			t.Fatalf("a router %d should have received one message id; received %d", i, len(router.chunks))
+		messageIDs := router.encoder.GetMessageIDs()
+		if len(messageIDs) != 1 {
+			t.Fatalf("a router %d should have received one message id; received %d", i, len(messageIDs))
 		}
-		if _, ok := router.chunks[mid]; !ok {
-			t.Fatalf("a router %d didn't receive the expected messag id", i)
+		if !slices.Contains(messageIDs, mid) {
+			t.Fatalf("a router %d didn't receive the expected message id", i)
 		}
-		if len(router.chunks[mid]) != 4 {
-			t.Fatalf("a router %d should have received %d chunks; received %d", i, 4, len(router.chunks[mid]))
+		if router.encoder.GetChunkCount(mid) != 4 {
+			t.Fatalf("a router %d should have received %d chunks; received %d", i, 4, router.encoder.GetChunkCount(mid))
 		}
-		buf, err := router.reconstructMessage(router.chunks[mid])
+		buf, err := router.encoder.ReconstructMessage(mid)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -256,19 +285,28 @@ func TestRlncPublishWithGF232(t *testing.T) {
 
 	var topics []*pubsub.Topic
 	var subs []*pubsub.Subscription
-	var routers []*RlncRouter
+	var routers []*EcRouter
 
 	for _, ps := range psubs {
 		f := field.NewBinaryFieldGF2_32()
-		c, err := NewRlnc(
-			WithRlncParams(RlncParams{
-				MessageChunkSize:   8,
-				NetworkChunkSize:   9,
-				ElementsPerChunk:   2,
-				MaxCoefficientBits: 16,
-				PublishMultiplier:  4,
+
+		// Create RLNC encoder
+		rlncConfig := &rlnc.RlncEncoderConfig{
+			MessageChunkSize:   8,
+			NetworkChunkSize:   9,
+			ElementsPerChunk:   2,
+			MaxCoefficientBits: 16,
+			Field:              f,
+		}
+		encoder, err := rlnc.NewRlncEncoder(rlncConfig)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		c, err := NewEcRouter(encoder,
+			WithEcParams(EcParams{
+				PublishMultiplier: 4,
 			}),
-			WithField(f),
 		)
 		if err != nil {
 			t.Fatal(err)
@@ -301,88 +339,23 @@ func TestRlncPublishWithGF232(t *testing.T) {
 	}
 	time.Sleep(200 * time.Millisecond)
 	for i, router := range routers[1:] {
-		if len(router.chunks) != 1 {
-			t.Fatalf("a router %d should have received one message id; received %d", i, len(router.chunks))
+		messageIDs := router.encoder.GetMessageIDs()
+		if len(messageIDs) != 1 {
+			t.Fatalf("a router %d should have received one message id; received %d", i, len(messageIDs))
 		}
-		if _, ok := router.chunks[mid]; !ok {
-			t.Fatalf("a router %d didn't receive the expected messag id", i)
+		if !slices.Contains(messageIDs, mid) {
+			t.Fatalf("a router %d didn't receive the expected message id", i)
 		}
-		if len(router.chunks[mid]) != 4 {
-			t.Fatalf("a router %d should have received %d chunks; received %d", i, 4, len(router.chunks[mid]))
+		if router.encoder.GetChunkCount(mid) != 4 {
+			t.Fatalf("a router %d should have received %d chunks; received %d", i, 4, router.encoder.GetChunkCount(mid))
 		}
-		buf, err := router.reconstructMessage(router.chunks[mid])
+		buf, err := router.encoder.ReconstructMessage(mid)
 		if err != nil {
 			t.Fatal(err)
 		}
 		if !slices.Equal(buf, msg) {
 			t.Fatalf("a router %d should have received the recovered message of %s; received %s instead", i, string(msg), string(buf))
 		}
-	}
-}
-
-// TestRlncCombine tests linear combination and reconstruction of RLNC chunks
-func TestRlncCombine(t *testing.T) {
-	f := field.NewPrimeField(big.NewInt(4_294_967_311))
-	c, err := NewRlnc(
-		WithRlncParams(RlncParams{
-			MessageChunkSize:   8,
-			NetworkChunkSize:   9,
-			ElementsPerChunk:   2,
-			MaxCoefficientBits: 16,
-			PublishMultiplier:  4,
-		}),
-		WithField(f),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Creating a list of chunks to combine
-	msg := []byte("cold-bird-jump-fog-grid-sand-pen")
-	buf := msg
-	var chunks []Chunk
-	for len(buf) > 0 {
-		chunk := buf[:c.params.MessageChunkSize]
-		// Extend the chunk into the network size
-		v := field.SplitBitsToFieldElements(chunk, c.messageBitsPerElement, c.field)
-		chunk = field.FieldElementsToBytes(v, c.networkBitsPerElement)
-
-		chunks = append(chunks, Chunk{
-			Data: chunk,
-		})
-		buf = buf[c.params.MessageChunkSize:]
-	}
-	coeffs := make([]field.Element, len(chunks))
-	for i := range chunks {
-		coeffs[i] = f.Zero()
-	}
-	for i := range chunks {
-		coeffs[i] = f.One()
-		chunks[i].Coeffs = slices.Clone(coeffs)
-		coeffs[i] = f.Zero()
-	}
-
-	// Combine chunks a few rounds
-	var newChunks []Chunk
-	numRounds := 3
-	for i := 0; i < numRounds; i++ {
-		for _ = range chunks {
-			combined, err := c.combineChunks(chunks)
-			if err != nil {
-				t.Fatal(err)
-			}
-			newChunks = append(newChunks, combined)
-		}
-		chunks = newChunks
-		newChunks = nil
-	}
-
-	buf, err = c.reconstructMessage(chunks)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !slices.Equal(buf, msg) {
-		t.Fatalf("the recovered message of should be %s; received %s instead", string(msg), string(buf))
 	}
 }
 

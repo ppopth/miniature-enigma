@@ -143,7 +143,7 @@ func TestFloodsubSparse(t *testing.T) {
 	var topics []*pubsub.Topic
 	var subs []*pubsub.Subscription
 	for _, ps := range psubs {
-		tp, err := ps.Join("foobar", NewFloodsub(hashSha256))
+		tp, err := ps.Join("foobar", NewFloodsubRouter(hashSha256))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -205,7 +205,7 @@ func TestFloodsubDense(t *testing.T) {
 	var topics []*pubsub.Topic
 	var subs []*pubsub.Subscription
 	for _, ps := range psubs {
-		tp, err := ps.Join("foobar", NewFloodsub(hashSha256))
+		tp, err := ps.Join("foobar", NewFloodsubRouter(hashSha256))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -269,7 +269,7 @@ func TestFloodsubOneNode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tp, err := ps.Join("foobar", NewFloodsub(hashSha256))
+	tp, err := ps.Join("foobar", NewFloodsubRouter(hashSha256))
 	sub, err := tp.Subscribe()
 	if err != nil {
 		t.Fatal(err)
@@ -317,7 +317,7 @@ func TestFloodsubConnectBeforeSubscribe(t *testing.T) {
 	var topics []*pubsub.Topic
 	var subs []*pubsub.Subscription
 	for _, ps := range psubs {
-		tp, err := ps.Join("foobar", NewFloodsub(hashSha256))
+		tp, err := ps.Join("foobar", NewFloodsubRouter(hashSha256))
 		if err != nil {
 			t.Fatal(err)
 		}

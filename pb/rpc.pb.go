@@ -135,7 +135,7 @@ func (m *RPC_SubOpts) GetTopicid() string {
 type TopicRpc struct {
 	Topicid *string `protobuf:"bytes,1,opt,name=topicid" json:"topicid,omitempty"`
 	// Router-specific types
-	Rlnc                 *RlncRpc     `protobuf:"bytes,2,opt,name=rlnc" json:"rlnc,omitempty"`
+	Ec                   *EcRpc       `protobuf:"bytes,2,opt,name=ec" json:"ec,omitempty"`
 	Floodsub             *FloodsubRpc `protobuf:"bytes,3,opt,name=floodsub" json:"floodsub,omitempty"`
 	XXX_NoUnkeyedLiteral struct{}     `json:"-"`
 	XXX_unrecognized     []byte       `json:"-"`
@@ -182,9 +182,9 @@ func (m *TopicRpc) GetTopicid() string {
 	return ""
 }
 
-func (m *TopicRpc) GetRlnc() *RlncRpc {
+func (m *TopicRpc) GetEc() *EcRpc {
 	if m != nil {
-		return m.Rlnc
+		return m.Ec
 	}
 	return nil
 }
@@ -196,25 +196,25 @@ func (m *TopicRpc) GetFloodsub() *FloodsubRpc {
 	return nil
 }
 
-type RlncRpc struct {
-	Chunks               []*RlncRpc_Chunk `protobuf:"bytes,1,rep,name=chunks" json:"chunks,omitempty"`
-	XXX_NoUnkeyedLiteral struct{}         `json:"-"`
-	XXX_unrecognized     []byte           `json:"-"`
-	XXX_sizecache        int32            `json:"-"`
+type EcRpc struct {
+	Chunks               []*EcRpc_Chunk `protobuf:"bytes,1,rep,name=chunks" json:"chunks,omitempty"`
+	XXX_NoUnkeyedLiteral struct{}       `json:"-"`
+	XXX_unrecognized     []byte         `json:"-"`
+	XXX_sizecache        int32          `json:"-"`
 }
 
-func (m *RlncRpc) Reset()         { *m = RlncRpc{} }
-func (m *RlncRpc) String() string { return proto.CompactTextString(m) }
-func (*RlncRpc) ProtoMessage()    {}
-func (*RlncRpc) Descriptor() ([]byte, []int) {
+func (m *EcRpc) Reset()         { *m = EcRpc{} }
+func (m *EcRpc) String() string { return proto.CompactTextString(m) }
+func (*EcRpc) ProtoMessage()    {}
+func (*EcRpc) Descriptor() ([]byte, []int) {
 	return fileDescriptor_77a6da22d6a3feb1, []int{2}
 }
-func (m *RlncRpc) XXX_Unmarshal(b []byte) error {
+func (m *EcRpc) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
 }
-func (m *RlncRpc) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+func (m *EcRpc) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 	if deterministic {
-		return xxx_messageInfo_RlncRpc.Marshal(b, m, deterministic)
+		return xxx_messageInfo_EcRpc.Marshal(b, m, deterministic)
 	} else {
 		b = b[:cap(b)]
 		n, err := m.MarshalToSizedBuffer(b)
@@ -224,28 +224,89 @@ func (m *RlncRpc) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 		return b[:n], nil
 	}
 }
-func (m *RlncRpc) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_RlncRpc.Merge(m, src)
+func (m *EcRpc) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_EcRpc.Merge(m, src)
 }
-func (m *RlncRpc) XXX_Size() int {
+func (m *EcRpc) XXX_Size() int {
 	return m.Size()
 }
-func (m *RlncRpc) XXX_DiscardUnknown() {
-	xxx_messageInfo_RlncRpc.DiscardUnknown(m)
+func (m *EcRpc) XXX_DiscardUnknown() {
+	xxx_messageInfo_EcRpc.DiscardUnknown(m)
 }
 
-var xxx_messageInfo_RlncRpc proto.InternalMessageInfo
+var xxx_messageInfo_EcRpc proto.InternalMessageInfo
 
-func (m *RlncRpc) GetChunks() []*RlncRpc_Chunk {
+func (m *EcRpc) GetChunks() []*EcRpc_Chunk {
 	if m != nil {
 		return m.Chunks
 	}
 	return nil
 }
 
-type RlncRpc_Chunk struct {
+type EcRpc_Chunk struct {
 	MessageID            *string  `protobuf:"bytes,1,opt,name=messageID" json:"messageID,omitempty"`
 	Data                 []byte   `protobuf:"bytes,2,opt,name=data" json:"data,omitempty"`
+	Extra                []byte   `protobuf:"bytes,3,opt,name=extra" json:"extra,omitempty"`
+	XXX_NoUnkeyedLiteral struct{} `json:"-"`
+	XXX_unrecognized     []byte   `json:"-"`
+	XXX_sizecache        int32    `json:"-"`
+}
+
+func (m *EcRpc_Chunk) Reset()         { *m = EcRpc_Chunk{} }
+func (m *EcRpc_Chunk) String() string { return proto.CompactTextString(m) }
+func (*EcRpc_Chunk) ProtoMessage()    {}
+func (*EcRpc_Chunk) Descriptor() ([]byte, []int) {
+	return fileDescriptor_77a6da22d6a3feb1, []int{2, 0}
+}
+func (m *EcRpc_Chunk) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *EcRpc_Chunk) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_EcRpc_Chunk.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *EcRpc_Chunk) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_EcRpc_Chunk.Merge(m, src)
+}
+func (m *EcRpc_Chunk) XXX_Size() int {
+	return m.Size()
+}
+func (m *EcRpc_Chunk) XXX_DiscardUnknown() {
+	xxx_messageInfo_EcRpc_Chunk.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_EcRpc_Chunk proto.InternalMessageInfo
+
+func (m *EcRpc_Chunk) GetMessageID() string {
+	if m != nil && m.MessageID != nil {
+		return *m.MessageID
+	}
+	return ""
+}
+
+func (m *EcRpc_Chunk) GetData() []byte {
+	if m != nil {
+		return m.Data
+	}
+	return nil
+}
+
+func (m *EcRpc_Chunk) GetExtra() []byte {
+	if m != nil {
+		return m.Extra
+	}
+	return nil
+}
+
+type RlncExtra struct {
 	Coefficients         [][]byte `protobuf:"bytes,3,rep,name=coefficients" json:"coefficients,omitempty"`
 	Extra                []byte   `protobuf:"bytes,4,opt,name=extra" json:"extra,omitempty"`
 	XXX_NoUnkeyedLiteral struct{} `json:"-"`
@@ -253,18 +314,18 @@ type RlncRpc_Chunk struct {
 	XXX_sizecache        int32    `json:"-"`
 }
 
-func (m *RlncRpc_Chunk) Reset()         { *m = RlncRpc_Chunk{} }
-func (m *RlncRpc_Chunk) String() string { return proto.CompactTextString(m) }
-func (*RlncRpc_Chunk) ProtoMessage()    {}
-func (*RlncRpc_Chunk) Descriptor() ([]byte, []int) {
-	return fileDescriptor_77a6da22d6a3feb1, []int{2, 0}
+func (m *RlncExtra) Reset()         { *m = RlncExtra{} }
+func (m *RlncExtra) String() string { return proto.CompactTextString(m) }
+func (*RlncExtra) ProtoMessage()    {}
+func (*RlncExtra) Descriptor() ([]byte, []int) {
+	return fileDescriptor_77a6da22d6a3feb1, []int{3}
 }
-func (m *RlncRpc_Chunk) XXX_Unmarshal(b []byte) error {
+func (m *RlncExtra) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
 }
-func (m *RlncRpc_Chunk) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+func (m *RlncExtra) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 	if deterministic {
-		return xxx_messageInfo_RlncRpc_Chunk.Marshal(b, m, deterministic)
+		return xxx_messageInfo_RlncExtra.Marshal(b, m, deterministic)
 	} else {
 		b = b[:cap(b)]
 		n, err := m.MarshalToSizedBuffer(b)
@@ -274,40 +335,26 @@ func (m *RlncRpc_Chunk) XXX_Marshal(b []byte, deterministic bool) ([]byte, error
 		return b[:n], nil
 	}
 }
-func (m *RlncRpc_Chunk) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_RlncRpc_Chunk.Merge(m, src)
+func (m *RlncExtra) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_RlncExtra.Merge(m, src)
 }
-func (m *RlncRpc_Chunk) XXX_Size() int {
+func (m *RlncExtra) XXX_Size() int {
 	return m.Size()
 }
-func (m *RlncRpc_Chunk) XXX_DiscardUnknown() {
-	xxx_messageInfo_RlncRpc_Chunk.DiscardUnknown(m)
+func (m *RlncExtra) XXX_DiscardUnknown() {
+	xxx_messageInfo_RlncExtra.DiscardUnknown(m)
 }
 
-var xxx_messageInfo_RlncRpc_Chunk proto.InternalMessageInfo
+var xxx_messageInfo_RlncExtra proto.InternalMessageInfo
 
-func (m *RlncRpc_Chunk) GetMessageID() string {
-	if m != nil && m.MessageID != nil {
-		return *m.MessageID
-	}
-	return ""
-}
-
-func (m *RlncRpc_Chunk) GetData() []byte {
-	if m != nil {
-		return m.Data
-	}
-	return nil
-}
-
-func (m *RlncRpc_Chunk) GetCoefficients() [][]byte {
+func (m *RlncExtra) GetCoefficients() [][]byte {
 	if m != nil {
 		return m.Coefficients
 	}
 	return nil
 }
 
-func (m *RlncRpc_Chunk) GetExtra() []byte {
+func (m *RlncExtra) GetExtra() []byte {
 	if m != nil {
 		return m.Extra
 	}
@@ -325,7 +372,7 @@ func (m *FloodsubRpc) Reset()         { *m = FloodsubRpc{} }
 func (m *FloodsubRpc) String() string { return proto.CompactTextString(m) }
 func (*FloodsubRpc) ProtoMessage()    {}
 func (*FloodsubRpc) Descriptor() ([]byte, []int) {
-	return fileDescriptor_77a6da22d6a3feb1, []int{3}
+	return fileDescriptor_77a6da22d6a3feb1, []int{4}
 }
 func (m *FloodsubRpc) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -365,36 +412,38 @@ func init() {
 	proto.RegisterType((*RPC)(nil), "pb.RPC")
 	proto.RegisterType((*RPC_SubOpts)(nil), "pb.RPC.SubOpts")
 	proto.RegisterType((*TopicRpc)(nil), "pb.TopicRpc")
-	proto.RegisterType((*RlncRpc)(nil), "pb.RlncRpc")
-	proto.RegisterType((*RlncRpc_Chunk)(nil), "pb.RlncRpc.Chunk")
+	proto.RegisterType((*EcRpc)(nil), "pb.EcRpc")
+	proto.RegisterType((*EcRpc_Chunk)(nil), "pb.EcRpc.Chunk")
+	proto.RegisterType((*RlncExtra)(nil), "pb.RlncExtra")
 	proto.RegisterType((*FloodsubRpc)(nil), "pb.FloodsubRpc")
 }
 
 func init() { proto.RegisterFile("rpc.proto", fileDescriptor_77a6da22d6a3feb1) }
 
 var fileDescriptor_77a6da22d6a3feb1 = []byte{
-	// 331 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x54, 0x90, 0x4f, 0x4a, 0xc3, 0x40,
-	0x14, 0xc6, 0x99, 0x26, 0xb5, 0xe9, 0x4b, 0x44, 0x7c, 0xb8, 0x18, 0x8a, 0xd4, 0x90, 0x55, 0x8a,
-	0x90, 0x45, 0xc1, 0x03, 0x68, 0x45, 0x70, 0x65, 0x19, 0xbd, 0x40, 0x32, 0x4d, 0x35, 0x18, 0x33,
-	0xc3, 0xcc, 0x04, 0xbc, 0x8e, 0x4b, 0x6f, 0xe2, 0xd2, 0x23, 0x48, 0x4f, 0x22, 0x99, 0x4e, 0xff,
-	0x64, 0x97, 0xf7, 0xbd, 0xdf, 0xf7, 0xf2, 0x7d, 0x03, 0x63, 0x25, 0x79, 0x26, 0x95, 0x30, 0x02,
-	0x07, 0xb2, 0x48, 0xbe, 0x08, 0x78, 0x6c, 0xb9, 0xc0, 0x1b, 0x38, 0xd5, 0x6d, 0xa1, 0xb9, 0xaa,
-	0xa4, 0xa9, 0x44, 0xa3, 0x29, 0x89, 0xbd, 0x34, 0x9c, 0x9f, 0x65, 0xb2, 0xc8, 0xd8, 0x72, 0x91,
-	0x3d, 0xb7, 0xc5, 0x93, 0x34, 0x9a, 0xf5, 0x29, 0x8c, 0xc1, 0x57, 0x92, 0x6b, 0x3a, 0xb0, 0x74,
-	0xd4, 0xd1, 0x2f, 0x42, 0x56, 0x9c, 0x49, 0xce, 0xec, 0x66, 0x72, 0x0b, 0x23, 0xe7, 0xc5, 0x4b,
-	0x18, 0x3b, 0x77, 0x51, 0x52, 0x12, 0x93, 0x34, 0x60, 0x07, 0x01, 0x29, 0x8c, 0x4c, 0x67, 0xad,
-	0x56, 0x74, 0x10, 0x93, 0x74, 0xcc, 0x76, 0x63, 0xa2, 0x20, 0xd8, 0x1d, 0x3d, 0xa6, 0x48, 0x8f,
-	0xc2, 0x2b, 0xf0, 0x55, 0xdd, 0x70, 0x6b, 0x0e, 0xe7, 0xa1, 0x0d, 0x5e, 0x37, 0x2e, 0x49, 0xdd,
-	0x70, 0xbc, 0x86, 0x60, 0x5d, 0x0b, 0xb1, 0xd2, 0x6d, 0x41, 0x3d, 0x0b, 0xd9, 0x76, 0x0f, 0x4e,
-	0xeb, 0xc0, 0x3d, 0x90, 0x7c, 0x13, 0x18, 0x39, 0x3b, 0xce, 0xe0, 0x84, 0xbf, 0xb5, 0xcd, 0xfb,
-	0xee, 0x51, 0xce, 0x8f, 0x6e, 0x67, 0x8b, 0x6e, 0xc3, 0x1c, 0x30, 0xd1, 0x30, 0xb4, 0x42, 0xd7,
-	0xf5, 0xa3, 0xd4, 0x3a, 0x7f, 0x2d, 0x1f, 0xef, 0x5d, 0xd2, 0x83, 0x80, 0x08, 0xfe, 0x2a, 0x37,
-	0xb9, 0xcd, 0x1a, 0x31, 0xfb, 0x8d, 0x09, 0x44, 0x5c, 0x94, 0xeb, 0x75, 0xc5, 0xab, 0xb2, 0x31,
-	0x9a, 0x7a, 0xb1, 0x97, 0x46, 0xac, 0xa7, 0xe1, 0x05, 0x0c, 0xcb, 0x4f, 0xa3, 0x72, 0xea, 0x5b,
-	0xe3, 0x76, 0x48, 0x66, 0x10, 0x1e, 0x95, 0xc0, 0x09, 0x04, 0xee, 0x4f, 0xdb, 0xc0, 0x11, 0xdb,
-	0xcf, 0x77, 0xd1, 0xcf, 0x66, 0x4a, 0x7e, 0x37, 0x53, 0xf2, 0xb7, 0x99, 0x92, 0xff, 0x00, 0x00,
-	0x00, 0xff, 0xff, 0x14, 0x47, 0x3e, 0x93, 0x0c, 0x02, 0x00, 0x00,
+	// 340 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x54, 0x90, 0xdf, 0x4a, 0xc3, 0x30,
+	0x14, 0xc6, 0x49, 0xbb, 0xb9, 0xf6, 0xac, 0x22, 0x04, 0x2f, 0xe2, 0x90, 0x51, 0x7a, 0x63, 0x45,
+	0xe8, 0xc5, 0xc0, 0x07, 0xd0, 0x39, 0xc1, 0xab, 0x8d, 0xa3, 0x2f, 0xd0, 0x66, 0x99, 0x16, 0x67,
+	0x13, 0x9a, 0x14, 0xbc, 0xf5, 0x51, 0x7c, 0x1b, 0x2f, 0x7d, 0x04, 0xd9, 0x93, 0x48, 0xb2, 0xee,
+	0x4f, 0xef, 0x72, 0xbe, 0xf3, 0xfb, 0x0e, 0xdf, 0x17, 0x08, 0x6b, 0xc5, 0x33, 0x55, 0x4b, 0x23,
+	0xa9, 0xa7, 0x8a, 0xe4, 0x9b, 0x80, 0x8f, 0x8b, 0x29, 0xbd, 0x85, 0x53, 0xdd, 0x14, 0x9a, 0xd7,
+	0xa5, 0x32, 0xa5, 0xac, 0x34, 0x23, 0xb1, 0x9f, 0x0e, 0x27, 0x67, 0x99, 0x2a, 0x32, 0x5c, 0x4c,
+	0xb3, 0xe7, 0xa6, 0x98, 0x2b, 0xa3, 0xb1, 0x4b, 0xd1, 0x18, 0x7a, 0xb5, 0xe2, 0x9a, 0x79, 0x8e,
+	0x8e, 0x2c, 0xfd, 0x22, 0x55, 0xc9, 0x51, 0x71, 0x74, 0x9b, 0xd1, 0x1d, 0x0c, 0x5a, 0x2f, 0xbd,
+	0x84, 0xb0, 0x75, 0x17, 0x82, 0x91, 0x98, 0xa4, 0x01, 0x1e, 0x04, 0xca, 0x60, 0x60, 0xac, 0xb5,
+	0x5c, 0x32, 0x2f, 0x26, 0x69, 0x88, 0xbb, 0x31, 0x59, 0x43, 0xb0, 0x3b, 0x7a, 0x4c, 0x91, 0x0e,
+	0x45, 0x2f, 0xc0, 0x13, 0xdc, 0x59, 0x87, 0x93, 0xd0, 0x06, 0x99, 0xb9, 0x14, 0x9e, 0xe0, 0xf4,
+	0x06, 0x82, 0xd5, 0x5a, 0xca, 0xa5, 0x6e, 0x0a, 0xe6, 0x3b, 0xc0, 0xf5, 0x7a, 0x6c, 0x35, 0x8b,
+	0xed, 0x81, 0xe4, 0x8b, 0x40, 0xdf, 0x59, 0xe9, 0x15, 0x9c, 0xf0, 0xb7, 0xa6, 0x7a, 0xef, 0x7c,
+	0x86, 0x5b, 0x65, 0x53, 0xab, 0x63, 0xbb, 0x1e, 0xcd, 0xa1, 0xef, 0x04, 0xdb, 0xf0, 0x43, 0x68,
+	0x9d, 0xbf, 0x8a, 0xa7, 0x87, 0x36, 0xdf, 0x41, 0xa0, 0x14, 0x7a, 0xcb, 0xdc, 0xe4, 0x2e, 0x63,
+	0x84, 0xee, 0x4d, 0xcf, 0xa1, 0x2f, 0x3e, 0x4d, 0x9d, 0xbb, 0x5c, 0x11, 0x6e, 0x87, 0x64, 0x06,
+	0x21, 0xae, 0x2b, 0x3e, 0xb3, 0x03, 0x4d, 0x20, 0xe2, 0x52, 0xac, 0x56, 0x25, 0x2f, 0x45, 0x65,
+	0x34, 0xf3, 0x63, 0x3f, 0x8d, 0xb0, 0xa3, 0x1d, 0xce, 0xf4, 0x8e, 0xcf, 0x5c, 0xc3, 0xf0, 0xa8,
+	0x23, 0x1d, 0x41, 0xd0, 0x86, 0xd9, 0x36, 0x8a, 0x70, 0x3f, 0xdf, 0x47, 0x3f, 0x9b, 0x31, 0xf9,
+	0xdd, 0x8c, 0xc9, 0xdf, 0x66, 0x4c, 0xfe, 0x03, 0x00, 0x00, 0xff, 0xff, 0x0f, 0x20, 0x6c, 0x9b,
+	0x25, 0x02, 0x00, 0x00,
 }
 
 func (m *RPC) Marshal() (dAtA []byte, err error) {
@@ -532,9 +581,9 @@ func (m *TopicRpc) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		i--
 		dAtA[i] = 0x1a
 	}
-	if m.Rlnc != nil {
+	if m.Ec != nil {
 		{
-			size, err := m.Rlnc.MarshalToSizedBuffer(dAtA[:i])
+			size, err := m.Ec.MarshalToSizedBuffer(dAtA[:i])
 			if err != nil {
 				return 0, err
 			}
@@ -554,7 +603,7 @@ func (m *TopicRpc) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	return len(dAtA) - i, nil
 }
 
-func (m *RlncRpc) Marshal() (dAtA []byte, err error) {
+func (m *EcRpc) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
@@ -564,12 +613,12 @@ func (m *RlncRpc) Marshal() (dAtA []byte, err error) {
 	return dAtA[:n], nil
 }
 
-func (m *RlncRpc) MarshalTo(dAtA []byte) (int, error) {
+func (m *EcRpc) MarshalTo(dAtA []byte) (int, error) {
 	size := m.Size()
 	return m.MarshalToSizedBuffer(dAtA[:size])
 }
 
-func (m *RlncRpc) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+func (m *EcRpc) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	_ = i
 	var l int
@@ -595,7 +644,7 @@ func (m *RlncRpc) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	return len(dAtA) - i, nil
 }
 
-func (m *RlncRpc_Chunk) Marshal() (dAtA []byte, err error) {
+func (m *EcRpc_Chunk) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
@@ -605,12 +654,60 @@ func (m *RlncRpc_Chunk) Marshal() (dAtA []byte, err error) {
 	return dAtA[:n], nil
 }
 
-func (m *RlncRpc_Chunk) MarshalTo(dAtA []byte) (int, error) {
+func (m *EcRpc_Chunk) MarshalTo(dAtA []byte) (int, error) {
 	size := m.Size()
 	return m.MarshalToSizedBuffer(dAtA[:size])
 }
 
-func (m *RlncRpc_Chunk) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+func (m *EcRpc_Chunk) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.XXX_unrecognized != nil {
+		i -= len(m.XXX_unrecognized)
+		copy(dAtA[i:], m.XXX_unrecognized)
+	}
+	if m.Extra != nil {
+		i -= len(m.Extra)
+		copy(dAtA[i:], m.Extra)
+		i = encodeVarintRpc(dAtA, i, uint64(len(m.Extra)))
+		i--
+		dAtA[i] = 0x1a
+	}
+	if m.Data != nil {
+		i -= len(m.Data)
+		copy(dAtA[i:], m.Data)
+		i = encodeVarintRpc(dAtA, i, uint64(len(m.Data)))
+		i--
+		dAtA[i] = 0x12
+	}
+	if m.MessageID != nil {
+		i -= len(*m.MessageID)
+		copy(dAtA[i:], *m.MessageID)
+		i = encodeVarintRpc(dAtA, i, uint64(len(*m.MessageID)))
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *RlncExtra) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *RlncExtra) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *RlncExtra) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	_ = i
 	var l int
@@ -634,20 +731,6 @@ func (m *RlncRpc_Chunk) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 			i--
 			dAtA[i] = 0x1a
 		}
-	}
-	if m.Data != nil {
-		i -= len(m.Data)
-		copy(dAtA[i:], m.Data)
-		i = encodeVarintRpc(dAtA, i, uint64(len(m.Data)))
-		i--
-		dAtA[i] = 0x12
-	}
-	if m.MessageID != nil {
-		i -= len(*m.MessageID)
-		copy(dAtA[i:], *m.MessageID)
-		i = encodeVarintRpc(dAtA, i, uint64(len(*m.MessageID)))
-		i--
-		dAtA[i] = 0xa
 	}
 	return len(dAtA) - i, nil
 }
@@ -752,8 +835,8 @@ func (m *TopicRpc) Size() (n int) {
 		l = len(*m.Topicid)
 		n += 1 + l + sovRpc(uint64(l))
 	}
-	if m.Rlnc != nil {
-		l = m.Rlnc.Size()
+	if m.Ec != nil {
+		l = m.Ec.Size()
 		n += 1 + l + sovRpc(uint64(l))
 	}
 	if m.Floodsub != nil {
@@ -766,7 +849,7 @@ func (m *TopicRpc) Size() (n int) {
 	return n
 }
 
-func (m *RlncRpc) Size() (n int) {
+func (m *EcRpc) Size() (n int) {
 	if m == nil {
 		return 0
 	}
@@ -784,7 +867,7 @@ func (m *RlncRpc) Size() (n int) {
 	return n
 }
 
-func (m *RlncRpc_Chunk) Size() (n int) {
+func (m *EcRpc_Chunk) Size() (n int) {
 	if m == nil {
 		return 0
 	}
@@ -798,6 +881,22 @@ func (m *RlncRpc_Chunk) Size() (n int) {
 		l = len(m.Data)
 		n += 1 + l + sovRpc(uint64(l))
 	}
+	if m.Extra != nil {
+		l = len(m.Extra)
+		n += 1 + l + sovRpc(uint64(l))
+	}
+	if m.XXX_unrecognized != nil {
+		n += len(m.XXX_unrecognized)
+	}
+	return n
+}
+
+func (m *RlncExtra) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
 	if len(m.Coefficients) > 0 {
 		for _, b := range m.Coefficients {
 			l = len(b)
@@ -1126,7 +1225,7 @@ func (m *TopicRpc) Unmarshal(dAtA []byte) error {
 			iNdEx = postIndex
 		case 2:
 			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field Rlnc", wireType)
+				return fmt.Errorf("proto: wrong wireType = %d for field Ec", wireType)
 			}
 			var msglen int
 			for shift := uint(0); ; shift += 7 {
@@ -1153,10 +1252,10 @@ func (m *TopicRpc) Unmarshal(dAtA []byte) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			if m.Rlnc == nil {
-				m.Rlnc = &RlncRpc{}
+			if m.Ec == nil {
+				m.Ec = &EcRpc{}
 			}
-			if err := m.Rlnc.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+			if err := m.Ec.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}
 			iNdEx = postIndex
@@ -1218,7 +1317,7 @@ func (m *TopicRpc) Unmarshal(dAtA []byte) error {
 	}
 	return nil
 }
-func (m *RlncRpc) Unmarshal(dAtA []byte) error {
+func (m *EcRpc) Unmarshal(dAtA []byte) error {
 	l := len(dAtA)
 	iNdEx := 0
 	for iNdEx < l {
@@ -1241,10 +1340,10 @@ func (m *RlncRpc) Unmarshal(dAtA []byte) error {
 		fieldNum := int32(wire >> 3)
 		wireType := int(wire & 0x7)
 		if wireType == 4 {
-			return fmt.Errorf("proto: RlncRpc: wiretype end group for non-group")
+			return fmt.Errorf("proto: EcRpc: wiretype end group for non-group")
 		}
 		if fieldNum <= 0 {
-			return fmt.Errorf("proto: RlncRpc: illegal tag %d (wire type %d)", fieldNum, wire)
+			return fmt.Errorf("proto: EcRpc: illegal tag %d (wire type %d)", fieldNum, wire)
 		}
 		switch fieldNum {
 		case 1:
@@ -1276,7 +1375,7 @@ func (m *RlncRpc) Unmarshal(dAtA []byte) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			m.Chunks = append(m.Chunks, &RlncRpc_Chunk{})
+			m.Chunks = append(m.Chunks, &EcRpc_Chunk{})
 			if err := m.Chunks[len(m.Chunks)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}
@@ -1303,7 +1402,7 @@ func (m *RlncRpc) Unmarshal(dAtA []byte) error {
 	}
 	return nil
 }
-func (m *RlncRpc_Chunk) Unmarshal(dAtA []byte) error {
+func (m *EcRpc_Chunk) Unmarshal(dAtA []byte) error {
 	l := len(dAtA)
 	iNdEx := 0
 	for iNdEx < l {
@@ -1399,6 +1498,91 @@ func (m *RlncRpc_Chunk) Unmarshal(dAtA []byte) error {
 				m.Data = []byte{}
 			}
 			iNdEx = postIndex
+		case 3:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Extra", wireType)
+			}
+			var byteLen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowRpc
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				byteLen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if byteLen < 0 {
+				return ErrInvalidLengthRpc
+			}
+			postIndex := iNdEx + byteLen
+			if postIndex < 0 {
+				return ErrInvalidLengthRpc
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Extra = append(m.Extra[:0], dAtA[iNdEx:postIndex]...)
+			if m.Extra == nil {
+				m.Extra = []byte{}
+			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipRpc(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthRpc
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.XXX_unrecognized = append(m.XXX_unrecognized, dAtA[iNdEx:iNdEx+skippy]...)
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *RlncExtra) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowRpc
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: RlncExtra: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: RlncExtra: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
 		case 3:
 			if wireType != 2 {
 				return fmt.Errorf("proto: wrong wireType = %d for field Coefficients", wireType)
