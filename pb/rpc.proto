@@ -36,6 +36,12 @@ message RlncExtra {
     optional bytes extra = 4; // chunk verifier extra data
 }
 
+message RsExtra {
+    optional uint32 index = 1;
+    optional uint32 chunkCount = 3; // number of data chunks for this message
+    optional bytes extra = 2; // chunk verifier extra data
+}
+
 message FloodsubRpc {
     repeated bytes messages = 1;
 }

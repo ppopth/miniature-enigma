@@ -28,28 +28,15 @@ func identityMatrix(n int, field Field) [][]Element {
 	return I
 }
 
-// matrixMultiply computes A × B matrix multiplication over the field
-func matrixMultiply(A, B [][]Element, field Field) [][]Element {
-	n, m := len(A), len(B[0])
-	k := len(B)
-	C := make([][]Element, n)
-	for i := range C {
-		C[i] = make([]Element, m)
-		for j := 0; j < m; j++ {
-			sum := field.Zero()
-			for l := 0; l < k; l++ {
-				tmp := A[i][l].Mul(B[l][j])
-				sum = sum.Add(tmp)
-			}
-			C[i][j] = sum
-		}
-	}
-	return C
-}
-
 // matricesEqual checks if two matrices are element-wise equal
 func matricesEqual(A, B [][]Element) bool {
+	if len(A) != len(B) {
+		return false
+	}
 	for i := range A {
+		if len(A[i]) != len(B[i]) {
+			return false
+		}
 		for j := range A[i] {
 			if !A[i][j].Equal(B[i][j]) {
 				return false
@@ -57,6 +44,67 @@ func matricesEqual(A, B [][]Element) bool {
 		}
 	}
 	return true
+}
+
+func TestMatrixMultiply(t *testing.T) {
+	field := NewPrimeField(big.NewInt(17)) // Small prime for easy verification
+
+	// Test case 1: Identity matrix multiplication
+	A := [][]Element{
+		{field.FromBytes([]byte{1}), field.FromBytes([]byte{0})},
+		{field.FromBytes([]byte{0}), field.FromBytes([]byte{1})},
+	}
+	B := [][]Element{
+		{field.FromBytes([]byte{3}), field.FromBytes([]byte{4})},
+		{field.FromBytes([]byte{5}), field.FromBytes([]byte{6})},
+	}
+	result := MatrixMultiply(A, B, field)
+	if !matricesEqual(result, B) {
+		t.Errorf("Identity matrix multiplication failed")
+	}
+
+	// Test case 2: Known multiplication
+	// A = [[2, 3], [1, 4]], B = [[5, 6], [7, 8]]
+	// Expected: [[2*5+3*7, 2*6+3*8], [1*5+4*7, 1*6+4*8]] = [[31, 36], [33, 38]]
+	// In GF(17): [[31%17, 36%17], [33%17, 38%17]] = [[14, 2], [16, 4]]
+	A2 := [][]Element{
+		{field.FromBytes([]byte{2}), field.FromBytes([]byte{3})},
+		{field.FromBytes([]byte{1}), field.FromBytes([]byte{4})},
+	}
+	B2 := [][]Element{
+		{field.FromBytes([]byte{5}), field.FromBytes([]byte{6})},
+		{field.FromBytes([]byte{7}), field.FromBytes([]byte{8})},
+	}
+	expected := [][]Element{
+		{field.FromBytes([]byte{14}), field.FromBytes([]byte{2})},
+		{field.FromBytes([]byte{16}), field.FromBytes([]byte{4})},
+	}
+	result2 := MatrixMultiply(A2, B2, field)
+	if !matricesEqual(result2, expected) {
+		t.Errorf("Known matrix multiplication failed. Expected %v, got %v", expected, result2)
+	}
+
+	// Test case 3: Non-square matrices
+	// A is 2x3, B is 3x2, result should be 2x2
+	A3 := [][]Element{
+		{field.FromBytes([]byte{1}), field.FromBytes([]byte{2}), field.FromBytes([]byte{3})},
+		{field.FromBytes([]byte{4}), field.FromBytes([]byte{5}), field.FromBytes([]byte{6})},
+	}
+	B3 := [][]Element{
+		{field.FromBytes([]byte{7}), field.FromBytes([]byte{8})},
+		{field.FromBytes([]byte{9}), field.FromBytes([]byte{10})},
+		{field.FromBytes([]byte{11}), field.FromBytes([]byte{12})},
+	}
+	result3 := MatrixMultiply(A3, B3, field)
+	if len(result3) != 2 || len(result3[0]) != 2 {
+		t.Errorf("Expected 2x2 result matrix, got %dx%d", len(result3), len(result3[0]))
+	}
+
+	// Test case 4: Empty matrices
+	emptyResult := MatrixMultiply([][]Element{}, [][]Element{}, field)
+	if emptyResult != nil {
+		t.Errorf("Expected nil for empty matrices, got %v", emptyResult)
+	}
 }
 
 // generateRandomMatrix creates an n×m matrix with random field elements
@@ -115,7 +163,7 @@ func TestInvertMatrixSmall(t *testing.T) {
 		t.Fatalf("2x2 matrix invert failed: %v", err)
 	}
 	// Check A * Ainv == I
-	I := matrixMultiply(A, Ainv, field)
+	I := MatrixMultiply(A, Ainv, field)
 	if !matricesEqual(I, identityMatrix(2, field)) {
 		t.Errorf("2x2 invert failed: A * Ainv != I")
 	}
@@ -136,6 +184,87 @@ func TestInvertMatrixSingular(t *testing.T) {
 	}
 }
 
+// TestInvertMatrixZeroDiagonal tests matrices with zero diagonal elements
+func TestInvertMatrixZeroDiagonal(t *testing.T) {
+	field := NewPrimeField(p)
+
+	// Test case 1: Simple 2x2 matrix with zero at [0,0]
+	A1 := [][]Element{
+		{field.Zero(), field.One()},
+		{field.FromBytes(big.NewInt(3).Bytes()), field.FromBytes(big.NewInt(2).Bytes())},
+	}
+
+	Ainv1, err := InvertMatrix(A1, field)
+	if err != nil {
+		t.Fatalf("Failed to invert matrix with zero diagonal at [0,0]: %v", err)
+	}
+
+	// Verify the inverse is correct
+	result := MatrixMultiply(A1, Ainv1, field)
+	if !matricesEqual(result, identityMatrix(2, field)) {
+		t.Errorf("A * A^(-1) != I for matrix with zero diagonal")
+	}
+
+	// Test case 2: 3x3 permutation matrix
+	A2 := [][]Element{
+		{field.Zero(), field.One(), field.Zero()},
+		{field.Zero(), field.Zero(), field.One()},
+		{field.One(), field.Zero(), field.Zero()},
+	}
+
+	Ainv2, err := InvertMatrix(A2, field)
+	if err != nil {
+		t.Fatalf("Failed to invert permutation matrix: %v", err)
+	}
+
+	// Verify the inverse is correct
+	result = MatrixMultiply(A2, Ainv2, field)
+	if !matricesEqual(result, identityMatrix(3, field)) {
+		t.Errorf("A * A^(-1) != I for permutation matrix")
+	}
+
+	// Test case 3: Matrix with all zeros on diagonal
+	A3 := [][]Element{
+		{field.Zero(), field.FromBytes(big.NewInt(2).Bytes()), field.FromBytes(big.NewInt(3).Bytes())},
+		{field.One(), field.Zero(), field.FromBytes(big.NewInt(4).Bytes())},
+		{field.FromBytes(big.NewInt(5).Bytes()), field.FromBytes(big.NewInt(6).Bytes()), field.Zero()},
+	}
+
+	Ainv3, err := InvertMatrix(A3, field)
+	if err != nil {
+		t.Fatalf("Failed to invert 3x3 matrix with zero diagonal: %v", err)
+	}
+
+	// Verify the inverse is correct
+	result = MatrixMultiply(A3, Ainv3, field)
+	if !matricesEqual(result, identityMatrix(3, field)) {
+		t.Errorf("A * A^(-1) != I for 3x3 matrix with zero diagonal")
+	}
+}
+
+// TestInvertMatrixRequiresPivoting tests cases where row swapping is needed
+func TestInvertMatrixRequiresPivoting(t *testing.T) {
+	field := NewPrimeField(p)
+
+	// Test case: Matrix that requires pivoting
+	A := [][]Element{
+		{field.One(), field.FromBytes(big.NewInt(2).Bytes()), field.FromBytes(big.NewInt(3).Bytes())},
+		{field.Zero(), field.Zero(), field.FromBytes(big.NewInt(4).Bytes())},
+		{field.Zero(), field.FromBytes(big.NewInt(5).Bytes()), field.FromBytes(big.NewInt(6).Bytes())},
+	}
+
+	Ainv, err := InvertMatrix(A, field)
+	if err != nil {
+		t.Fatalf("Failed to invert matrix that requires pivoting: %v", err)
+	}
+
+	// Verify the inverse is correct
+	result := MatrixMultiply(A, Ainv, field)
+	if !matricesEqual(result, identityMatrix(3, field)) {
+		t.Errorf("A * A^(-1) != I for matrix requiring pivoting")
+	}
+}
+
 // TestRecoverVectorsIdentity tests vector recovery when encoding matrix is identity
 func TestRecoverVectorsIdentity(t *testing.T) {
 	field := NewPrimeField(p)
@@ -148,7 +277,7 @@ func TestRecoverVectorsIdentity(t *testing.T) {
 		{field.FromBytes(big.NewInt(5).Bytes()), field.FromBytes(big.NewInt(6).Bytes())},
 	}
 	A := identityMatrix(n, field)
-	R := matrixMultiply(A, V, field)
+	R := MatrixMultiply(A, V, field)
 
 	Vrec, err := RecoverVectors(A, R, field)
 	if err != nil {
@@ -172,7 +301,7 @@ func TestRecoverVectorsKnown(t *testing.T) {
 		{field.FromBytes(big.NewInt(5).Bytes()), field.FromBytes(big.NewInt(6).Bytes())},
 		{field.FromBytes(big.NewInt(7).Bytes()), field.FromBytes(big.NewInt(8).Bytes())},
 	}
-	R := matrixMultiply(A, V, field)
+	R := MatrixMultiply(A, V, field)
 	Vrec, err := RecoverVectors(A, R, field)
 	if err != nil {
 		t.Fatalf("RecoverVectors failed: %v", err)
@@ -195,7 +324,7 @@ func TestRecoverVectorsSingular(t *testing.T) {
 		{field.FromBytes(big.NewInt(3).Bytes())},
 		{field.FromBytes(big.NewInt(5).Bytes())},
 	}
-	R := matrixMultiply(A, V, field)
+	R := MatrixMultiply(A, V, field)
 	_, err := RecoverVectors(A, R, field)
 	if err == nil {
 		t.Errorf("Expected error for singular matrix in RecoverVectors")
@@ -217,7 +346,7 @@ func TestRecoverVectorsRandom(t *testing.T) {
 			break
 		}
 	}
-	R := matrixMultiply(A, V, field)
+	R := MatrixMultiply(A, V, field)
 
 	Vrec, err := RecoverVectors(A, R, field)
 	if err != nil {
@@ -385,7 +514,7 @@ func BenchmarkMatrixMultiply(b *testing.B) {
 
 		b.Run(fmt.Sprintf("size=%d", size), func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
-				_ = matrixMultiply(A, B, field)
+				_ = MatrixMultiply(A, B, field)
 			}
 		})
 	}

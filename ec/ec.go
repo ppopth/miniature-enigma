@@ -39,7 +39,8 @@ func NewEcRouter(encoder encode.Encoder, opts ...EcOption) (*EcRouter, error) {
 		encoder:       encoder,
 		messageIDFunc: hashSha256, // SHA-256 gives good distribution for message IDs
 
-		peers: make(map[peer.ID]pubsub.TopicSendFunc),
+		peers:    make(map[peer.ID]pubsub.TopicSendFunc),
+		notified: make(map[string]struct{}),
 	}
 
 	router.cond = sync.NewCond(&router.mutex)
@@ -93,7 +94,8 @@ type EcRouter struct {
 
 	peers map[peer.ID]pubsub.TopicSendFunc // Active peer connections
 
-	received [][]byte // Queue of fully reconstructed messages
+	received [][]byte            // Queue of fully reconstructed messages
+	notified map[string]struct{} // Track which messages have been notified to prevent duplicates
 }
 
 type EcParams struct {
@@ -186,12 +188,19 @@ func (router *EcRouter) notifyMessage(messageID string) {
 	router.mutex.Lock()
 	defer router.mutex.Unlock()
 
+	// Check if we've already notified this message
+	if _, exists := router.notified[messageID]; exists {
+		return
+	}
+
 	reconstructedMessage, err := router.encoder.ReconstructMessage(messageID)
 	if err != nil {
 		// Quietly return
 		return
 	}
 
+	// Mark message as notified and add to queue
+	router.notified[messageID] = struct{}{}
 	router.received = append(router.received, reconstructedMessage)
 	router.cond.Signal()
 }

@@ -92,15 +92,33 @@ func InvertMatrix(A [][]Element, field Field) ([][]Element, error) {
 
 	// Perform Gaussian elimination with pivoting
 	for i := 0; i < n; i++ {
-		// Find pivot
-		if B[i][i].IsZero() {
+		// Find pivot: look for a non-zero element in column i
+		pivot := -1
+		for k := i; k < n; k++ {
+			if !B[k][i].IsZero() {
+				pivot = k
+				break
+			}
+		}
+
+		// If no pivot found, matrix is singular
+		if pivot == -1 {
 			return nil, fmt.Errorf("matrix not invertible")
 		}
+
+		// Swap rows if needed
+		if pivot != i {
+			B[i], B[pivot] = B[pivot], B[i]
+			inv[i], inv[pivot] = inv[pivot], inv[i]
+		}
+
+		// Normalize the pivot row
 		invPivot := B[i][i].Inv()
 		for j := 0; j < n; j++ {
 			B[i][j] = B[i][j].Mul(invPivot)
 			inv[i][j] = inv[i][j].Mul(invPivot)
 		}
+
 		// Eliminate other rows
 		for k := 0; k < n; k++ {
 			if k == i {
@@ -117,6 +135,38 @@ func InvertMatrix(A [][]Element, field Field) ([][]Element, error) {
 		}
 	}
 	return inv, nil
+}
+
+// MatrixMultiply computes A × B matrix multiplication over the field
+// A is m×n, B is n×p, result is m×p
+func MatrixMultiply(A, B [][]Element, field Field) [][]Element {
+	if len(A) == 0 || len(B) == 0 {
+		return nil
+	}
+
+	m := len(A)    // rows of A
+	n := len(A[0]) // cols of A = rows of B
+	p := len(B[0]) // cols of B
+
+	// Verify dimensions match
+	if len(B) != n {
+		panic(fmt.Sprintf("matrix dimensions mismatch: A is %d×%d, B is %d×%d", m, n, len(B), p))
+	}
+
+	// Create result matrix
+	C := make([][]Element, m)
+	for i := range C {
+		C[i] = make([]Element, p)
+		for j := 0; j < p; j++ {
+			sum := field.Zero()
+			for k := 0; k < n; k++ {
+				product := A[i][k].Mul(B[k][j])
+				sum = sum.Add(product)
+			}
+			C[i][j] = sum
+		}
+	}
+	return C
 }
 
 // RecoverVectors solves V = A⁻¹ * R, where A is the coefficient matrix and R the combined vectors.

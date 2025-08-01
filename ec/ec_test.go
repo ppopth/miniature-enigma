@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/ethp2p/eth-ec-broadcast/ec/encode/rlnc"
+	"github.com/ethp2p/eth-ec-broadcast/ec/encode/rs"
 	"github.com/ethp2p/eth-ec-broadcast/ec/field"
 	"github.com/ethp2p/eth-ec-broadcast/host"
 	"github.com/ethp2p/eth-ec-broadcast/pubsub"
@@ -479,4 +480,361 @@ func getPubsubs(t *testing.T, hs []*host.Host) []*pubsub.PubSub {
 		psubs = append(psubs, ps)
 	}
 	return psubs
+}
+
+// TestRsSparse tests RS message distribution in a sparsely connected network
+func TestRsSparse(t *testing.T) {
+	hosts := getHosts(t, 5)
+	psubs := getPubsubs(t, hosts)
+
+	var topics []*pubsub.Topic
+	var subs []*pubsub.Subscription
+	for _, ps := range psubs {
+		// Create binary field GF(2^8)
+		irreducible := big.NewInt(0x11B)
+		f := field.NewBinaryField(8, irreducible)
+
+		// Create RS encoder
+		rsConfig := &rs.RsEncoderConfig{
+			ParityRatio:      0.5,                       // 50% redundancy
+			MessageChunkSize: 16,                        // Message chunk size in bytes
+			NetworkChunkSize: 16,                        // Network chunk size in bytes
+			ElementsPerChunk: 16,                        // Number of field elements per chunk
+			Field:            f,                         // GF(2^8)
+			PrimitiveElement: f.FromBytes([]byte{0x03}), // 0x03 is primitive in GF(2^8)
+		}
+		encoder, err := rs.NewRsEncoder(rsConfig)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		c, err := NewEcRouter(encoder,
+			WithEcParams(EcParams{
+				PublishMultiplier: 4,
+				ForwardMultiplier: 8,
+			}),
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		tp, err := ps.Join("foobar", c)
+		if err != nil {
+			t.Fatal(err)
+		}
+		sub, err := tp.Subscribe()
+		if err != nil {
+			t.Fatal(err)
+		}
+		topics = append(topics, tp)
+		subs = append(subs, sub)
+	}
+
+	sparseConnect(t, hosts)
+
+	msgs := make(map[string]struct{})
+	msgs["fooofooofooofoo0"] = struct{}{}
+	msgs["barrbarrbarrbar1"] = struct{}{}
+
+	var wg sync.WaitGroup
+	var lk sync.Mutex
+	received := make([]map[string]struct{}, len(subs))
+	for i := range received {
+		received[i] = make(map[string]struct{})
+	}
+
+	for i, sub := range subs {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for _ = range msgs {
+				buf, err := sub.Next(context.Background())
+				if err != nil {
+					t.Fatal(err)
+				}
+				lk.Lock()
+				received[i][string(buf)] = struct{}{}
+				lk.Unlock()
+			}
+		}()
+	}
+
+	time.Sleep(200 * time.Millisecond)
+
+	for m := range msgs {
+		err := topics[0].Publish([]byte(m))
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	wg.Wait()
+
+	for i := range received {
+		if !maps.Equal(received[i], msgs) {
+			t.Fatalf("node %d received %v but expected %v", i, received[i], msgs)
+		}
+	}
+}
+
+// TestRsDense tests RS message distribution in a densely connected network
+func TestRsDense(t *testing.T) {
+	hosts := getHosts(t, 10)
+	psubs := getPubsubs(t, hosts)
+
+	var topics []*pubsub.Topic
+	var subs []*pubsub.Subscription
+	for _, ps := range psubs {
+		// Create binary field GF(2^8)
+		irreducible := big.NewInt(0x11B)
+		f := field.NewBinaryField(8, irreducible)
+
+		// Create RS encoder
+		rsConfig := &rs.RsEncoderConfig{
+			ParityRatio:      0.5,                       // 50% redundancy
+			MessageChunkSize: 16,                        // Message chunk size in bytes
+			NetworkChunkSize: 16,                        // Network chunk size in bytes
+			ElementsPerChunk: 16,                        // Number of field elements per chunk
+			Field:            f,                         // GF(2^8)
+			PrimitiveElement: f.FromBytes([]byte{0x03}), // 0x03 is primitive in GF(2^8)
+		}
+		encoder, err := rs.NewRsEncoder(rsConfig)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		c, err := NewEcRouter(encoder,
+			WithEcParams(EcParams{
+				PublishMultiplier: 4,
+				ForwardMultiplier: 8,
+			}),
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		tp, err := ps.Join("foobar", c)
+		if err != nil {
+			t.Fatal(err)
+		}
+		sub, err := tp.Subscribe()
+		if err != nil {
+			t.Fatal(err)
+		}
+		topics = append(topics, tp)
+		subs = append(subs, sub)
+	}
+
+	denseConnect(t, hosts)
+
+	msgs := make(map[string]struct{})
+	msgs["fooofooofooofoo0"] = struct{}{}
+	msgs["barrbarrbarrbar1"] = struct{}{}
+
+	var wg sync.WaitGroup
+	var lk sync.Mutex
+	received := make([]map[string]struct{}, len(subs))
+	for i := range received {
+		received[i] = make(map[string]struct{})
+	}
+
+	for i, sub := range subs {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for _ = range msgs {
+				buf, err := sub.Next(context.Background())
+				if err != nil {
+					t.Fatal(err)
+				}
+				lk.Lock()
+				received[i][string(buf)] = struct{}{}
+				lk.Unlock()
+			}
+		}()
+	}
+
+	time.Sleep(200 * time.Millisecond)
+
+	for m := range msgs {
+		err := topics[0].Publish([]byte(m))
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	wg.Wait()
+
+	for i := range received {
+		if !maps.Equal(received[i], msgs) {
+			t.Fatalf("node %d received %v but expected %v", i, received[i], msgs)
+		}
+	}
+}
+
+// TestRsPublish tests RS message publishing and chunk reconstruction
+func TestRsPublish(t *testing.T) {
+	hosts := getHosts(t, 5)
+	psubs := getPubsubs(t, hosts)
+
+	var topics []*pubsub.Topic
+	var subs []*pubsub.Subscription
+	var routers []*EcRouter
+
+	for _, ps := range psubs {
+		// Create binary field GF(2^8)
+		irreducible := big.NewInt(0x11B)
+		f := field.NewBinaryField(8, irreducible)
+
+		// Create RS encoder
+		rsConfig := &rs.RsEncoderConfig{
+			ParityRatio:      0.5,                       // 50% redundancy
+			MessageChunkSize: 16,                        // Message chunk size in bytes
+			NetworkChunkSize: 16,                        // Network chunk size in bytes
+			ElementsPerChunk: 16,                        // Number of field elements per chunk
+			Field:            f,                         // GF(2^8)
+			PrimitiveElement: f.FromBytes([]byte{0x03}), // 0x03 is primitive in GF(2^8)
+		}
+		encoder, err := rs.NewRsEncoder(rsConfig)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		c, err := NewEcRouter(encoder,
+			WithEcParams(EcParams{
+				PublishMultiplier: 4,
+			}),
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		tp, err := ps.Join("foobar", c)
+		if err != nil {
+			t.Fatal(err)
+		}
+		sub, err := tp.Subscribe()
+		if err != nil {
+			t.Fatal(err)
+		}
+		topics = append(topics, tp)
+		subs = append(subs, sub)
+		routers = append(routers, c)
+	}
+
+	for _, h := range hosts[1:] {
+		if err := hosts[0].Connect(context.Background(), h.LocalAddr()); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	time.Sleep(200 * time.Millisecond)
+	// Publish a message (must be multiple of 16 bytes for our chunk size)
+	msg := []byte("cold-bird-jump!!")
+	mid := hashSha256(msg)
+	if err := topics[0].Publish(msg); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(200 * time.Millisecond)
+	for i, router := range routers[1:] {
+		messageIDs := router.encoder.GetMessageIDs()
+		if len(messageIDs) != 1 {
+			t.Fatalf("router %d should have received one message id; received %d", i, len(messageIDs))
+		}
+		if !slices.Contains(messageIDs, mid) {
+			t.Fatalf("router %d didn't receive the expected message id", i)
+		}
+		// For RS with 50% redundancy: 1 data chunk + 1 parity chunk = 2 total chunks
+		if router.encoder.GetChunkCount(mid) < router.encoder.GetMinChunksForReconstruction(mid) {
+			t.Fatalf("router %d should have received at least %d chunks for reconstruction; received %d",
+				i, router.encoder.GetMinChunksForReconstruction(mid), router.encoder.GetChunkCount(mid))
+		}
+		buf, err := router.encoder.ReconstructMessage(mid)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !slices.Equal(buf, msg) {
+			t.Fatalf("router %d should have recovered message %s; received %s instead", i, string(msg), string(buf))
+		}
+	}
+}
+
+// TestRsPublishWithPrimeField tests RS message publishing with prime field
+func TestRsPublishWithPrimeField(t *testing.T) {
+	hosts := getHosts(t, 5)
+	psubs := getPubsubs(t, hosts)
+
+	var topics []*pubsub.Topic
+	var subs []*pubsub.Subscription
+	var routers []*EcRouter
+
+	for _, ps := range psubs {
+		// Create prime field
+		f := field.NewPrimeField(big.NewInt(65537))
+
+		// Create RS encoder
+		rsConfig := &rs.RsEncoderConfig{
+			ParityRatio:      1.0,                    // 100% redundancy for more robust testing
+			MessageChunkSize: 16,                     // Message chunk size in bytes
+			NetworkChunkSize: 18,                     // Slightly larger for prime field encoding
+			ElementsPerChunk: 8,                      // 8 elements per chunk
+			Field:            f,                      // Prime field
+			PrimitiveElement: f.FromBytes([]byte{3}), // 3 is primitive modulo 65537
+		}
+		encoder, err := rs.NewRsEncoder(rsConfig)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		c, err := NewEcRouter(encoder,
+			WithEcParams(EcParams{
+				PublishMultiplier: 4,
+			}),
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		tp, err := ps.Join("foobar", c)
+		if err != nil {
+			t.Fatal(err)
+		}
+		sub, err := tp.Subscribe()
+		if err != nil {
+			t.Fatal(err)
+		}
+		topics = append(topics, tp)
+		subs = append(subs, sub)
+		routers = append(routers, c)
+	}
+
+	for _, h := range hosts[1:] {
+		if err := hosts[0].Connect(context.Background(), h.LocalAddr()); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	time.Sleep(200 * time.Millisecond)
+	// Publish a message (must be multiple of 16 bytes for our chunk size)
+	msg := []byte("prime-field-test")
+	mid := hashSha256(msg)
+	if err := topics[0].Publish(msg); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(200 * time.Millisecond)
+	for i, router := range routers[1:] {
+		messageIDs := router.encoder.GetMessageIDs()
+		if len(messageIDs) != 1 {
+			t.Fatalf("router %d should have received one message id; received %d", i, len(messageIDs))
+		}
+		if !slices.Contains(messageIDs, mid) {
+			t.Fatalf("router %d didn't receive the expected message id", i)
+		}
+		// For RS with 100% redundancy: 1 data chunk + 1 parity chunk = 2 total chunks
+		if router.encoder.GetChunkCount(mid) < router.encoder.GetMinChunksForReconstruction(mid) {
+			t.Fatalf("router %d should have received at least %d chunks for reconstruction; received %d",
+				i, router.encoder.GetMinChunksForReconstruction(mid), router.encoder.GetChunkCount(mid))
+		}
+		buf, err := router.encoder.ReconstructMessage(mid)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !slices.Equal(buf, msg) {
+			t.Fatalf("router %d should have recovered message %s; received %s instead", i, string(msg), string(buf))
+		}
+	}
 }
