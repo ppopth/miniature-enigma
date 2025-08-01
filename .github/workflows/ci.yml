@@ -39,3 +39,15 @@ jobs:
           gofmt -l .
           exit 1
         fi
+
+    - name: Test RLNC Network Example
+      run: |
+        cd examples/rlnc-network
+        go build
+        ./test.sh
+
+    - name: Test Reed-Solomon Network Example
+      run: |
+        cd examples/rs-network
+        go build
+        ./test.sh

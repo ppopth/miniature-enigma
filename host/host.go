@@ -84,6 +84,7 @@ func NewHost(opts ...HostOption) (*Host, error) {
 	}
 	quicConfig := &quic.Config{
 		EnableDatagrams: true,
+		MaxIdleTimeout:  10 * time.Minute,
 	}
 	host.listener, err = host.transport.Listen(tlsConfig, quicConfig)
 	if err != nil {

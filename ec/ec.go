@@ -122,6 +122,14 @@ func (router *EcRouter) Publish(message []byte) error {
 	router.cond.Signal()
 
 	sendFuncs := slices.Collect(maps.Values(router.peers))
+
+	// Handle case when there are no peers connected
+	if len(sendFuncs) == 0 {
+		router.mutex.Unlock()
+		log.Debugf("Published message %s but no peers connected - message stored locally", messageID[:8])
+		return nil
+	}
+
 	// Shuffle the peers
 	mrand.Shuffle(len(sendFuncs), func(i, j int) {
 		sendFuncs[i], sendFuncs[j] = sendFuncs[j], sendFuncs[i]
@@ -161,6 +169,12 @@ func (router *EcRouter) Publish(message []byte) error {
 func (router *EcRouter) sendChunk(messageID string) {
 	router.mutex.Lock()
 	defer router.mutex.Unlock()
+
+	// Check if we have any peers to send to
+	if len(router.peers) == 0 {
+		log.Debugf("Cannot forward chunk for message %s - no peers connected", messageID[:8])
+		return
+	}
 
 	combinedChunk, err := router.encoder.EmitChunk(messageID)
 	if err != nil {

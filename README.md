@@ -45,17 +45,35 @@ go test ./...
 go test -coverprofile=coverage.out ./...
 ```
 
-### Using the Example
+### Examples
 
+The project includes comprehensive examples demonstrating different erasure coding approaches:
+
+#### Simple Network (Basic P2P)
 ```bash
 cd examples/simple
-
-# Start a listening node on port 8001
-./simple -l 8001
-
-# In another terminal, connect to the listening node
-./simple -c 127.0.0.1:8001
+go build
+./simple -l 8001               # Listening node
+./simple -c 127.0.0.1:8001     # Connecting node
 ```
+
+#### RLNC Network (Random Linear Network Coding)
+```bash
+cd examples/rlnc-network
+go build
+./rlnc-network -l 8001 -id alice
+./rlnc-network -l 8002 -c 127.0.0.1:8001 -id bob
+```
+
+#### Reed-Solomon Network (Systematic MDS Codes)
+```bash
+cd examples/rs-network
+go build
+./rs-network -l 8001 -id alice
+./rs-network -l 8002 -c 127.0.0.1:8001 -id bob
+```
+
+See `examples/README.md` for detailed usage instructions, performance comparisons, and advanced configurations.
 
 ## Development
 
@@ -68,11 +86,15 @@ make build          # Build all packages
 make test           # Run tests with race detection
 make test-short     # Run tests without race detection
 make coverage       # Run tests with coverage
+make bench          # Run benchmarks for all packages
+make bench-rlnc     # Run RLNC encoder benchmarks
+make bench-rs       # Run Reed-Solomon encoder benchmarks
+make bench-field    # Run field arithmetic benchmarks
+make test-examples  # Test example applications
 make proto          # Generate protobuf files
 make proto-clean    # Clean protobuf generated files
-make example        # Build example application
-make example-linux  # Cross compile example for Linux
-make ci             # Run full CI pipeline locally
+make example        # Build all example applications
+make example-linux  # Cross compile examples for Linux
 make install-tools  # Install development tools
 make clean          # Clean build artifacts
 ```
@@ -84,6 +106,7 @@ This project uses GitHub Actions for continuous integration:
 - **Testing**: Runs tests on Go 1.21, 1.22, and 1.23
 - **Building**: Ensures all packages build correctly
 - **Code Formatting**: Validates code formatting with `gofmt`
+- **Example Testing**: Tests both RLNC and Reed-Solomon network examples for network functionality
 
 ## Architecture
 

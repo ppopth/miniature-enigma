@@ -49,7 +49,6 @@ make proto                # Generate protobuf files
 make proto-clean          # Clean protobuf generated files
 make example              # Build example application
 make example-linux        # Cross compile example for Linux
-make ci                   # Run full CI pipeline locally
 make install-tools        # Install development tools
 make clean                # Clean build artifacts
 ```
@@ -109,6 +108,7 @@ The project includes a CI/CD pipeline with:
 - **Automated testing**: All tests run on each push and pull request
 - **Build validation**: Ensures all packages build correctly
 - **Code formatting**: Validates code formatting with `gofmt`
+- **Example testing**: Tests both RLNC and Reed-Solomon network examples for network functionality
 
 ### Code Quality Tools
 - **Makefile**: Standardized development workflow commands

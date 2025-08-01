@@ -12,7 +12,7 @@ BINARY_UNIX=$(BINARY_NAME)_unix
 TEST_PACKAGES=./...
 COVERAGE_OUT=coverage.out
 
-.PHONY: all build clean test coverage deps proto example help
+.PHONY: all build clean test coverage deps proto example help bench bench-rlnc bench-rs bench-field test-examples
 
 all: deps test build ## Run all checks and build
 
@@ -28,9 +28,13 @@ build: ## Build the project
 
 clean: ## Clean build artifacts
 	$(GOCLEAN)
-	rm -f $(BINARY_NAME)
-	rm -f $(BINARY_UNIX)
 	rm -f $(COVERAGE_OUT)
+	rm -f examples/simple/simple
+	rm -f examples/simple/simple_unix
+	rm -f examples/rlnc-network/rlnc-network
+	rm -f examples/rlnc-network/rlnc-network_unix
+	rm -f examples/rs-network/rs-network
+	rm -f examples/rs-network/rs-network_unix
 
 test: ## Run tests
 	$(GOTEST) -v -race ./...
@@ -42,19 +46,38 @@ coverage: ## Run tests with coverage
 	$(GOTEST) -race -coverprofile=$(COVERAGE_OUT) -covermode=atomic $(TEST_PACKAGES)
 	$(GOCMD) tool cover -html=$(COVERAGE_OUT)
 
+bench: ## Run benchmarks for all packages
+	$(GOTEST) -bench=. -benchmem ./...
+
+bench-rlnc: ## Run RLNC encoder benchmarks
+	$(GOTEST) -bench=. -benchmem ./ec/encode/rlnc
+
+bench-rs: ## Run Reed-Solomon encoder benchmarks
+	$(GOTEST) -bench=. -benchmem ./ec/encode/rs
+
+bench-field: ## Run field arithmetic benchmarks
+	$(GOTEST) -bench=. -benchmem ./ec/field
+
+test-examples: ## Test example applications
+	cd examples/rlnc-network && chmod +x test.sh && ./test.sh
+	cd examples/rs-network && chmod +x test.sh && ./test.sh
+
 proto: ## Generate protobuf files
 	cd pb && $(MAKE)
 
 proto-clean: ## Clean protobuf generated files
 	cd pb && $(MAKE) clean
 
-example: ## Build example application
-	cd examples/simple && $(GOBUILD) -o $(BINARY_NAME) -v .
+example: ## Build example applications
+	cd examples/simple && $(GOBUILD) -o simple -v .
+	cd examples/rlnc-network && $(GOBUILD) -o rlnc-network -v .
+	cd examples/rs-network && $(GOBUILD) -o rs-network -v .
 
-example-linux: ## Cross compile example for Linux
-	cd examples/simple && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 $(GOBUILD) -o $(BINARY_UNIX) -v .
+example-linux: ## Cross compile examples for Linux
+	cd examples/simple && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 $(GOBUILD) -o simple_unix -v .
+	cd examples/rlnc-network && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 $(GOBUILD) -o rlnc-network_unix -v .
+	cd examples/rs-network && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 $(GOBUILD) -o rs-network_unix -v .
 
-ci: deps test build example ## Run CI pipeline locally
 
 # Install development tools
 install-tools: ## Install development tools
