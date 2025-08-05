@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Test script to verify Shadow simulation results by reading log files
-Usage: python3 test_results.py [node_count] [expected_messages]
+Usage: python3 test_results.py [node_count] [expected_messages] [protocol]
 """
 
 import sys
@@ -42,10 +42,10 @@ def parse_shadow_logs(node_count: int) -> Dict[int, int]:
 
     return received_counts
 
-def test_message_delivery(node_count: int, expected_messages: int) -> bool:
+def test_message_delivery(node_count: int, expected_messages: int, protocol: str = "floodsub") -> bool:
     """Test that all nodes received the expected number of messages."""
-    print("Shadow Simulation Test Results")
-    print("=" * 40)
+    print(f"Shadow Simulation Test Results ({protocol.upper()})")
+    print("=" * 50)
 
     received_counts = parse_shadow_logs(node_count)
 
@@ -92,13 +92,14 @@ def check_shadow_data_exists() -> bool:
 def main():
     """Main function."""
     if len(sys.argv) < 3:
-        print("Usage: python3 test_results.py [node_count] [expected_messages]")
-        print("Example: python3 test_results.py 10 5")
+        print("Usage: python3 test_results.py [node_count] [expected_messages] [protocol]")
+        print("Example: python3 test_results.py 10 5 floodsub")
         sys.exit(1)
 
     try:
         node_count = int(sys.argv[1])
         expected_messages = int(sys.argv[2])
+        protocol = sys.argv[3] if len(sys.argv) > 3 else "floodsub"
     except ValueError:
         print("Error: node_count and expected_messages must be integers")
         sys.exit(1)
@@ -106,7 +107,7 @@ def main():
     if not check_shadow_data_exists():
         sys.exit(1)
 
-    success = test_message_delivery(node_count, expected_messages)
+    success = test_message_delivery(node_count, expected_messages, protocol)
     sys.exit(0 if success else 1)
 
 if __name__ == "__main__":

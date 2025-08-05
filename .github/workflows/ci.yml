@@ -101,11 +101,16 @@ jobs:
     - name: Download Go dependencies
       run: go mod download
 
-    - name: Run Shadow simulation test
+    - name: Run Shadow simulation tests
       run: |
         cd shadow
-        make all NODE_COUNT=5 MSG_COUNT=3
-      timeout-minutes: 10
+        echo "Testing FloodSub protocol..."
+        make floodsub NODE_COUNT=5 MSG_COUNT=3
+        echo "Testing RLNC protocol..."
+        make rlnc NODE_COUNT=5 MSG_COUNT=3
+        echo "Testing Reed-Solomon protocol..."
+        make rs NODE_COUNT=5 MSG_COUNT=3
+      timeout-minutes: 15
 
     - name: Upload Shadow logs on failure
       if: failure()

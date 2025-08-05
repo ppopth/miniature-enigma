@@ -1,10 +1,11 @@
-# usage: python network_graph.py [node-count] [msg-size] [num-msgs]
-# Generates Shadow network configuration for eth-ec-broadcast floodsub simulation
+# usage: python network_graph.py [node-count] [msg-size] [num-msgs] [protocol]
+# Generates Shadow network configuration for eth-ec-broadcast simulation
 from dataclasses import dataclass
 import random
 import networkx as nx
 import sys
 import yaml
+import os
 
 G = nx.DiGraph()
 
@@ -121,6 +122,7 @@ edges = [
 node_count = int(sys.argv[1])
 msg_size = int(sys.argv[2])
 num_msgs = int(sys.argv[3])
+protocol = sys.argv[4] if len(sys.argv) > 4 else "floodsub"
 
 ids = {}
 for node_type in node_types:
@@ -141,7 +143,12 @@ with open("graph.gml", "w") as file:
     file.write("\n".join(nx.generate_gml(G)))
     file.close
 
-with open("shadow.template.yaml", "r") as file:
+# Find the template file - check current directory first, then parent directory
+template_path = "shadow.template.yaml"
+if not os.path.exists(template_path):
+    template_path = "../shadow.template.yaml"
+
+with open(template_path, "r") as file:
     config = yaml.safe_load(file)
 
 config["network"] = {"graph": {"type": "gml", "file": {"path": "graph.gml"}}}
@@ -159,9 +166,9 @@ for i in range(node_count):
         "processes": [{
             "args": f"-node-id {i} -node-count {node_count} -msg-count {num_msgs} -msg-size {msg_size}",
             "expected_final_state": "running",
-            "path": "./eth-ec-broadcast-sim",
+            "path": f"./{protocol}-sim",
         }],
     }
 
-with open("shadow.yaml", "w") as file:
+with open(f"shadow-{protocol}.yaml", "w") as file:
     yaml.dump(config, file)

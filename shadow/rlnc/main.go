@@ -2,24 +2,20 @@ package main
 
 import (
 	"context"
-	"crypto/sha256"
 	"flag"
 	"fmt"
 	"log"
+	"math/big"
 	"net"
 	"net/netip"
 	"time"
 
-	"github.com/ethp2p/eth-ec-broadcast/floodsub"
+	"github.com/ethp2p/eth-ec-broadcast/ec"
+	"github.com/ethp2p/eth-ec-broadcast/ec/encode/rlnc"
+	"github.com/ethp2p/eth-ec-broadcast/ec/field"
 	"github.com/ethp2p/eth-ec-broadcast/host"
 	"github.com/ethp2p/eth-ec-broadcast/pubsub"
 )
-
-func hashSha256(buf []byte) string {
-	h := sha256.New()
-	h.Write(buf)
-	return fmt.Sprintf("%x", h.Sum(nil))
-}
 
 func main() {
 	var (
@@ -31,10 +27,10 @@ func main() {
 	flag.Parse()
 
 	// Setup logging
-	log.SetPrefix(fmt.Sprintf("[node-%d] ", *nodeID))
+	log.SetPrefix(fmt.Sprintf("[rlnc-node-%d] ", *nodeID))
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 
-	log.Printf("Starting eth-ec-broadcast floodsub simulation")
+	log.Printf("Starting eth-ec-broadcast RLNC simulation")
 	log.Printf("Node ID: %d, Total nodes: %d, Messages: %d, Message size: %d bytes",
 		*nodeID, *nodeCount, *msgCount, *msgSize)
 
@@ -59,11 +55,47 @@ func main() {
 	}
 	defer ps.Close()
 
-	// Create floodsub router
-	router := floodsub.NewFloodsubRouter(hashSha256)
+	// Create RLNC encoder with messageChunkSize = 8 bytes
+	// For 8 bytes (64 bits) with ElementsPerChunk = 1:
+	// messageBitsPerElement = 64/1 = 64, so need BitsPerDataElement() ≥ 64
+	// This means p.BitLen() ≥ 65, so use a 65-bit prime
+	prime65bit := new(big.Int)
+	prime65bit.SetString("36893488147419103183", 10) // 2^65 - 49, a 65-bit prime
+	f := field.NewPrimeField(prime65bit)
+
+	messageChunkSize := 8
+	elementsPerChunk := 1 // One 65-bit field element per chunk
+	networkChunkSize := 9 // Need at least ⌈65/8⌉ = 9 bytes for network serialization
+
+	// Validate that message size is compatible with chunk size
+	if *msgSize%messageChunkSize != 0 {
+		log.Fatalf("Message size %d must be a multiple of message chunk size %d",
+			*msgSize, messageChunkSize)
+	}
+
+	rlncConfig := &rlnc.RlncEncoderConfig{
+		MessageChunkSize:   messageChunkSize, // 8 bytes
+		NetworkChunkSize:   networkChunkSize, // 9 bytes
+		ElementsPerChunk:   elementsPerChunk, // 1 element
+		MaxCoefficientBits: 32,
+		Field:              f,
+	}
+	encoder, err := rlnc.NewRlncEncoder(rlncConfig)
+	if err != nil {
+		log.Fatalf("Failed to create RLNC encoder: %v", err)
+	}
+
+	// Create EC router with RLNC
+	router, err := ec.NewEcRouter(encoder, ec.WithEcParams(ec.EcParams{
+		PublishMultiplier: 2, // 2x redundancy when publishing
+		ForwardMultiplier: 2, // 2x when forwarding
+	}))
+	if err != nil {
+		log.Fatalf("Failed to create EC router: %v", err)
+	}
 
 	// Join topic
-	topicName := "floodsub-sim"
+	topicName := "rlnc-sim"
 	topic, err := ps.Join(topicName, router)
 	if err != nil {
 		log.Fatalf("Failed to join topic: %v", err)
@@ -76,7 +108,7 @@ func main() {
 		log.Fatalf("Failed to subscribe to topic: %v", err)
 	}
 
-	log.Printf("Successfully joined topic: %s", topicName)
+	log.Printf("Successfully joined topic: %s with RLNC encoding", topicName)
 
 	// Wait for all nodes to start listening (important in Shadow)
 	log.Printf("Waiting for all nodes to initialize...")
@@ -137,16 +169,16 @@ func main() {
 				return
 			}
 			receivedCount++
-			log.Printf("Received message %d: %s", receivedCount, string(msg))
+			log.Printf("Received message %d (reconstructed from RLNC chunks): %s", receivedCount, string(msg))
 		}
 	}()
 
 	// Publish messages if this is node 0 (publisher)
 	if *nodeID == 0 {
-		log.Printf("Starting to publish %d messages", *msgCount)
+		log.Printf("Starting to publish %d messages with RLNC encoding", *msgCount)
 		for i := 0; i < *msgCount; i++ {
 			// Create message with specified size, fully filled
-			msgContent := fmt.Sprintf("Message-%d-from-node-%d", i, *nodeID)
+			msgContent := fmt.Sprintf("RLNCMsg-%d-from-node-%d", i, *nodeID)
 			msg := make([]byte, *msgSize)
 
 			// Fill the entire message buffer
@@ -163,7 +195,7 @@ func main() {
 			if err != nil {
 				log.Printf("Failed to publish message %d: %v", i, err)
 			} else {
-				log.Printf("Published message %d: %s", i, msgContent)
+				log.Printf("Published message %d with RLNC encoding: %s", i, msgContent)
 			}
 
 			// Wait between messages

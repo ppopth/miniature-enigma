@@ -1,71 +1,65 @@
-# Makefile for eth-ec-broadcast Shadow simulation
+# Master Makefile for eth-ec-broadcast Shadow simulations
 
-.PHONY: all build clean run-sim test help check-deps
+.PHONY: all help clean floodsub rlnc rs test-all clean-all
 
 # Default parameters
 NODE_COUNT ?= 10
 MSG_SIZE ?= 64
 MSG_COUNT ?= 5
 
-# Check dependencies
-check-deps:
-	@echo "Checking dependencies..."
-	@which shadow > /dev/null || (echo "Error: Shadow simulator not found. Install from https://shadow.github.io/" && exit 1)
-	@which python3 > /dev/null || (echo "Error: Python 3 not found" && exit 1)
-	@python3 -c "import networkx, yaml" 2>/dev/null || (echo "Error: Install required packages: pip3 install networkx pyyaml" && exit 1)
-	@echo "Dependencies OK"
+# Run floodsub simulation
+floodsub:
+	@echo "Running FloodSub simulation..."
+	cd floodsub && make all NODE_COUNT=$(NODE_COUNT) MSG_SIZE=$(MSG_SIZE) MSG_COUNT=$(MSG_COUNT)
 
-# Build the simulation binary
-build: check-deps
-	@echo "Building eth-ec-broadcast simulation binary..."
-	cd .. && go build -o shadow/eth-ec-broadcast-sim ./shadow
-	@test -f eth-ec-broadcast-sim || (echo "Build failed" && exit 1)
-	@echo "Build successful"
+# Run RLNC simulation
+rlnc:
+	@echo "Running RLNC simulation..."
+	cd rlnc && make all NODE_COUNT=$(NODE_COUNT) MSG_SIZE=$(MSG_SIZE) MSG_COUNT=$(MSG_COUNT)
 
-# Generate network graph and Shadow configuration
-generate-config: check-deps
-	@echo "Generating Shadow network configuration for $(NODE_COUNT) nodes..."
-	python3 network_graph.py $(NODE_COUNT) $(MSG_SIZE) $(MSG_COUNT)
-	@test -f shadow.yaml && test -f graph.gml || (echo "Config generation failed" && exit 1)
-	@echo "Configuration generated"
+# Run Reed-Solomon simulation
+rs:
+	@echo "Running Reed-Solomon simulation..."
+	cd rs && make all NODE_COUNT=$(NODE_COUNT) MSG_SIZE=$(MSG_SIZE) MSG_COUNT=$(MSG_COUNT)
 
-# Run the complete Shadow simulation
-run-sim: build generate-config
-	@echo "Starting Shadow simulation ($(NODE_COUNT) nodes, $(MSG_COUNT) messages of $(MSG_SIZE) bytes)..."
-	shadow shadow.yaml
-	@echo "Simulation completed"
+# Test all protocol results
+test-all:
+	@echo "Testing all protocol simulation results..."
+	cd floodsub && make test NODE_COUNT=$(NODE_COUNT) MSG_COUNT=$(MSG_COUNT) || echo "FloodSub test failed"
+	cd rlnc && make test NODE_COUNT=$(NODE_COUNT) MSG_COUNT=$(MSG_COUNT) || echo "RLNC test failed"
+	cd rs && make test NODE_COUNT=$(NODE_COUNT) MSG_COUNT=$(MSG_COUNT) || echo "Reed-Solomon test failed"
 
-# Test simulation results by reading Shadow logs
-test:
-	@echo "Testing Shadow simulation results..."
-	python3 test_results.py $(NODE_COUNT) $(MSG_COUNT)
+# Clean all protocol directories
+clean-all:
+	@echo "Cleaning all protocol directories..."
+	cd floodsub && make clean
+	cd rlnc && make clean
+	cd rs && make clean
 
-# Clean build artifacts and simulation results
-clean:
-	@echo "Cleaning up..."
-	rm -f eth-ec-broadcast-sim
-	rm -f shadow.yaml
-	rm -f graph.gml
-	rm -f node-*-results.txt
-	rm -rf shadow.data/
-	@echo "Cleanup completed"
+# Run all protocols (default)
+all: floodsub rlnc rs
 
-# Complete workflow: build, run, and test
-all: run-sim test
+# Clean (alias for clean-all)
+clean: clean-all
 
 # Help target
 help:
-	@echo "eth-ec-broadcast Shadow Simulation"
-	@echo "=================================="
+	@echo "eth-ec-broadcast Shadow Simulation Suite"
+	@echo "======================================="
+	@echo ""
+	@echo "This master Makefile coordinates simulations for all three protocols:"
+	@echo "- FloodSub: Basic message flooding protocol"
+	@echo "- RLNC: Random Linear Network Coding with erasure coding"
+	@echo "- Reed-Solomon: Reed-Solomon erasure coding"
 	@echo ""
 	@echo "Targets:"
-	@echo "  check-deps      - Check required dependencies"
-	@echo "  build           - Build the simulation binary"
-	@echo "  generate-config - Generate Shadow configuration"
-	@echo "  run-sim         - Run complete Shadow simulation"
-	@echo "  test            - Test simulation results from Shadow logs"
-	@echo "  all             - Run simulation and test results"
-	@echo "  clean           - Clean up build artifacts and results"
+	@echo "  floodsub        - Run FloodSub simulation"
+	@echo "  rlnc            - Run RLNC simulation"
+	@echo "  rs              - Run Reed-Solomon simulation"
+	@echo "  all             - Run all three protocol simulations"
+	@echo "  test-all        - Test results from all protocols"
+	@echo "  clean-all       - Clean all protocol directories"
+	@echo "  clean           - Alias for clean-all"
 	@echo "  help            - Show this help message"
 	@echo ""
 	@echo "Configuration variables:"
@@ -74,6 +68,12 @@ help:
 	@echo "  MSG_COUNT       - Number of messages (default: $(MSG_COUNT))"
 	@echo ""
 	@echo "Examples:"
-	@echo "  make all                                    # Run with defaults"
-	@echo "  make run-sim NODE_COUNT=20 MSG_SIZE=128    # Custom parameters"
-	@echo "  make test                                  # Test existing results"
+	@echo "  make all                                    # Run all protocols with defaults"
+	@echo "  make floodsub NODE_COUNT=20 MSG_SIZE=128   # Run FloodSub with custom parameters"
+	@echo "  make rlnc NODE_COUNT=15                    # Run RLNC with 15 nodes"
+	@echo "  make test-all                              # Test all existing results"
+	@echo ""
+	@echo "Individual protocol help:"
+	@echo "  cd floodsub && make help                   # FloodSub-specific help"
+	@echo "  cd rlnc && make help                       # RLNC-specific help"
+	@echo "  cd rs && make help                         # Reed-Solomon-specific help"

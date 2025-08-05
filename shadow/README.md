@@ -1,6 +1,10 @@
-# eth-ec-broadcast Shadow Simulation
+# eth-ec-broadcast Shadow Simulation Suite
 
-This directory contains Shadow network simulation setup for testing eth-ec-broadcast floodsub protocol under realistic network conditions.
+This directory contains Shadow network simulation setup for testing eth-ec-broadcast protocols under realistic network conditions. The suite supports three broadcast protocols:
+
+- **FloodSub**: Basic message flooding protocol (baseline)
+- **RLNC**: Random Linear Network Coding erasure coding
+- **Reed-Solomon**: Reed-Solomon erasure coding
 
 ## Prerequisites
 
@@ -14,16 +18,19 @@ This directory contains Shadow network simulation setup for testing eth-ec-broad
 ## Quick Start
 
 ```bash
-# Run simulation with default parameters (10 nodes, 5 messages, 64 bytes each)
+# Run all three protocols with default parameters (10 nodes, 5 messages, 64 bytes each)
 make all
 
-# Run with custom parameters
-make run-sim NODE_COUNT=20 MSG_SIZE=128 MSG_COUNT=10
+# Run all protocols with same parameters and test
+make all NODE_COUNT=20 MSG_SIZE=128 MSG_COUNT=10
+make test-all NODE_COUNT=20 MSG_COUNT=10
 
-# Test existing results (use same parameters as simulation)
-make test NODE_COUNT=20 MSG_COUNT=10
+# Or run individual protocols with different parameters
+make floodsub NODE_COUNT=20 MSG_SIZE=128 MSG_COUNT=10
+make rlnc NODE_COUNT=15 MSG_SIZE=64 MSG_COUNT=5
+make rs NODE_COUNT=12 MSG_SIZE=32 MSG_COUNT=8
 
-# Clean up
+# Clean up all protocol directories
 make clean
 ```
 
