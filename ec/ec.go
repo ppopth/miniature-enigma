@@ -166,13 +166,27 @@ func (router *EcRouter) Publish(message []byte) error {
 }
 
 // sendChunk forwards a random linear combination to help message propagation
-func (router *EcRouter) sendChunk(messageID string) {
+func (router *EcRouter) sendChunk(messageID string, excludePeer peer.ID) {
 	router.mutex.Lock()
 	defer router.mutex.Unlock()
 
 	// Check if we have any peers to send to
 	if len(router.peers) == 0 {
 		log.Debugf("Cannot forward chunk for message %s - no peers connected", messageID[:8])
+		return
+	}
+
+	// Get all peers except the one we should exclude
+	var availablePeers []peer.ID
+	for peerID := range router.peers {
+		if peerID != excludePeer {
+			availablePeers = append(availablePeers, peerID)
+		}
+	}
+
+	// Check if we have any available peers after exclusion
+	if len(availablePeers) == 0 {
+		log.Debugf("Cannot forward chunk for message %s - only sender peer connected", messageID[:8])
 		return
 	}
 
@@ -187,10 +201,10 @@ func (router *EcRouter) sendChunk(messageID string) {
 		Data:      combinedChunk.Data(),
 		Extra:     combinedChunk.EncodeExtra(),
 	}
-	// Pick a random peer
-	peerIndex := slices.Collect(maps.Keys(router.peers))[mrand.Intn(len(router.peers))]
+	// Pick a random peer (excluding the sender)
+	selectedPeer := availablePeers[mrand.Intn(len(availablePeers))]
 	// Send the rpc
-	router.peers[peerIndex](&pb.TopicRpc{
+	router.peers[selectedPeer](&pb.TopicRpc{
 		Ec: &pb.EcRpc{
 			Chunks: []*pb.EcRpc_Chunk{rpcChunk},
 		},
@@ -306,7 +320,7 @@ func (router *EcRouter) HandleIncomingRPC(peerID peer.ID, topicRPC *pb.TopicRpc)
 
 	for messageID, chunkCount := range messagesToSend {
 		for i := 0; i < chunkCount; i++ {
-			router.sendChunk(messageID)
+			router.sendChunk(messageID, peerID)
 		}
 	}
 	for messageID := range messagesToNotify {
