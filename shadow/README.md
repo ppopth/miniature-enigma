@@ -36,11 +36,13 @@ make clean
 
 ## Files
 
-- `Makefile` - Main interface for building and running simulations
-- `main.go` - Simulation binary source code
+- `Makefile` - Master coordinator for all protocol simulations
 - `network_graph.py` - Generates Shadow network topology and configuration
 - `shadow.template.yaml` - Shadow configuration template
 - `test_results.py` - Test script for verifying simulation results from Shadow logs
+- `floodsub/` - FloodSub protocol simulation (main.go + Makefile)
+- `rlnc/` - RLNC erasure coding simulation (main.go + Makefile)
+- `rs/` - Reed-Solomon erasure coding simulation (main.go + Makefile)
 
 ## Network Topology
 
