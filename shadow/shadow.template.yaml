@@ -1,0 +1,10 @@
+general:
+  stop_time: 300s
+  model_unblocked_syscall_latency: true
+  log_level: info
+  heartbeat_interval: 1s
+
+experimental:
+  use_syscall_counters: true
+  use_memory_manager: false
+  use_cpu_pinning: true

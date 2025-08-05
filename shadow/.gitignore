@@ -1,0 +1,25 @@
+# Shadow simulation artifacts
+eth-ec-broadcast-sim
+shadow.yaml
+graph.gml
+shadow.data/
+shadow.data.*
+
+# Simulation results
+node-*-results.txt
+*.log
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Temporary files
+*.tmp
+*.temp
+*~
+
+# OS files
+.DS_Store
+Thumbs.db

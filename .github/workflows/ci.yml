@@ -51,3 +51,65 @@ jobs:
         cd examples/rs-network
         go build
         ./test.sh
+
+  shadow-simulation:
+    name: Shadow Network Simulation
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+
+    steps:
+    - name: Check out code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.23'
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.x'
+
+    - name: Install Python dependencies
+      run: pip3 install networkx pyyaml
+
+    - name: Install Shadow simulator
+      run: |
+        # Install Shadow dependencies
+        sudo apt-get update
+        sudo apt-get install -y \
+          cmake \
+          findutils \
+          libclang-dev \
+          libc-dbg \
+          libglib2.0-0 \
+          libglib2.0-dev \
+          make \
+          netbase \
+          python3 \
+          python3-networkx \
+          xz-utils
+
+        # Build and install Shadow from source
+        git clone --depth 1 https://github.com/shadow/shadow.git shadow-simulator
+        cd shadow-simulator
+        ./setup build --clean
+        ./setup install
+        echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+    - name: Download Go dependencies
+      run: go mod download
+
+    - name: Run Shadow simulation test
+      run: |
+        cd shadow
+        make all NODE_COUNT=5 MSG_COUNT=3
+      timeout-minutes: 10
+
+    - name: Upload Shadow logs on failure
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: shadow-logs
+        path: shadow/shadow.data/
