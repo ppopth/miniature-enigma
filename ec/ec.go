@@ -296,23 +296,32 @@ func (router *EcRouter) HandleIncomingRPC(peerID peer.ID, topicRPC *pb.TopicRpc)
 		chunkData := chunkRPC.GetData()
 		extraData := chunkRPC.GetExtra()
 
+		log.Debugf("Received chunk for message %s from peer %s", messageID[:8], peerID.String()[:8])
+
 		// Decode the chunk using the encoder
 		decodedChunk, err := router.encoder.DecodeChunk(messageID, chunkData, extraData)
 		if err != nil {
+			log.Debugf("Failed to decode chunk for message %s from peer %s: %v", messageID[:8], peerID.String()[:8], err)
 			continue
 		}
 
 		// Use encoder to verify and add the chunk
 		if !router.encoder.VerifyThenAddChunk(decodedChunk) {
+			log.Debugf("Chunk verification failed for message %s from peer %s (duplicate or invalid)", messageID[:8], peerID.String()[:8])
 			continue
 		}
+
+		log.Debugf("Valid chunk accepted for message %s from peer %s", messageID[:8], peerID.String()[:8])
 
 		// Useful chunk! Forward it to help network propagation
 		messagesToSend[messageID] += router.params.ForwardMultiplier
 		// Check if we have enough chunks to reconstruct the message
 		if router.encoder.GetChunkCount(messageID) >= router.encoder.GetMinChunksForReconstruction(messageID) {
 			if _, err := router.encoder.ReconstructMessage(messageID); err == nil {
+				log.Debugf("Successfully reconstructed message %s", messageID[:8])
 				messagesToNotify[messageID] = struct{}{}
+			} else {
+				log.Debugf("Failed to reconstruct message %s: %v", messageID[:8], err)
 			}
 		}
 	}

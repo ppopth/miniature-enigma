@@ -10,6 +10,10 @@ shadow.data.*
 floodsub/floodsub-sim
 rlnc/rlnc-sim
 rs/rs-sim
+
+# Topology generator binary and generated files
+topology/gen/topology-gen
+topology/topology-*.json
 floodsub/shadow-*.yaml
 rlnc/shadow-*.yaml
 rs/shadow-*.yaml

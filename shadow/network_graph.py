@@ -124,6 +124,15 @@ msg_size = int(sys.argv[2])
 num_msgs = int(sys.argv[3])
 protocol = sys.argv[4] if len(sys.argv) > 4 else "floodsub"
 
+# Use default topology file based on node count - look for standard topology file
+topology_file = f"../topology/topology-{node_count}.json"
+if os.path.exists(topology_file):
+    topology_file = os.path.abspath(topology_file)
+    print(f"Using topology file: {topology_file}")
+else:
+    print(f"No topology file found at {topology_file}, using default topology")
+    topology_file = ""
+
 ids = {}
 for node_type in node_types:
     for location in locations:
@@ -161,10 +170,15 @@ for i in range(node_count):
     else:
         node_type = random.choices(node_types, map(lambda nt: nt.weight, node_types))[0]
 
+    # Build args with optional topology file
+    args = f"-node-id {i} -node-count {node_count} -msg-count {num_msgs} -msg-size {msg_size}"
+    if topology_file:
+        args += f" -topology-file {topology_file}"
+
     config["hosts"][f"node{i}"] = {
         "network_node_id": ids[f"{location.name}-{node_type.name}"],
         "processes": [{
-            "args": f"-node-id {i} -node-count {node_count} -msg-count {num_msgs} -msg-size {msg_size}",
+            "args": args,
             "expected_final_state": "running",
             "path": f"./{protocol}-sim",
         }],

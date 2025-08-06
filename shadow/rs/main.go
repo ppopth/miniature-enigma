@@ -15,14 +15,16 @@ import (
 	"github.com/ethp2p/eth-ec-broadcast/ec/field"
 	"github.com/ethp2p/eth-ec-broadcast/host"
 	"github.com/ethp2p/eth-ec-broadcast/pubsub"
+	"github.com/ethp2p/eth-ec-broadcast/shadow/topology"
 )
 
 func main() {
 	var (
-		nodeID    = flag.Int("node-id", 0, "Node ID for this simulation instance")
-		nodeCount = flag.Int("node-count", 10, "Total number of nodes in simulation")
-		msgCount  = flag.Int("msg-count", 5, "Number of messages to publish")
-		msgSize   = flag.Int("msg-size", 32, "Size of each message in bytes")
+		nodeID       = flag.Int("node-id", 0, "Node ID for this simulation instance")
+		nodeCount    = flag.Int("node-count", 10, "Total number of nodes in simulation")
+		msgCount     = flag.Int("msg-count", 5, "Number of messages to publish")
+		msgSize      = flag.Int("msg-size", 32, "Size of each message in bytes")
+		topologyFile = flag.String("topology-file", "", "Path to topology JSON file (if not specified, uses linear topology)")
 	)
 	flag.Parse()
 
@@ -30,9 +32,32 @@ func main() {
 	log.SetPrefix(fmt.Sprintf("[rs-node-%d] ", *nodeID))
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 
+	// Load topology
+	var topo *topology.Topology
+	var err error
+
+	if *topologyFile != "" {
+		// Load from file
+		topo, err = topology.LoadFromFile(*topologyFile)
+		if err != nil {
+			log.Fatalf("Failed to load topology from file: %v", err)
+		}
+		// Validate node count
+		if topo.NodeCount != *nodeCount {
+			log.Fatalf("Topology file specifies %d nodes but simulation has %d nodes",
+				topo.NodeCount, *nodeCount)
+		}
+		log.Printf("Loaded topology from file: %s", *topologyFile)
+	} else {
+		// Default to linear topology
+		topo = topology.GenerateLinear(*nodeCount)
+		log.Printf("Using default linear topology")
+	}
+
 	log.Printf("Starting eth-ec-broadcast Reed-Solomon simulation")
 	log.Printf("Node ID: %d, Total nodes: %d, Messages: %d, Message size: %d bytes",
 		*nodeID, *nodeCount, *msgCount, *msgSize)
+	log.Printf("Topology: %s", topo.GetDescription())
 
 	// Create host with deterministic port based on node ID
 	// Enable Shadow compatibility mode
@@ -78,6 +103,7 @@ func main() {
 		ElementsPerChunk: elementsPerChunk, // 8 elements per chunk
 		Field:            f,
 		PrimitiveElement: f.FromBytes([]byte{0x03}), // 0x03 is primitive in GF(2^8)
+		MinEmitCount:     4,
 	}
 	encoder, err := rs.NewRsEncoder(rsConfig)
 	if err != nil {
@@ -87,7 +113,7 @@ func main() {
 	// Create EC router with Reed-Solomon
 	router, err := ec.NewEcRouter(encoder, ec.WithEcParams(ec.EcParams{
 		PublishMultiplier: 4, // 4x redundancy when publishing
-		ForwardMultiplier: 4, // 4x when forwarding
+		ForwardMultiplier: 8, // 8x when forwarding
 	}))
 	if err != nil {
 		log.Fatalf("Failed to create EC router: %v", err)
@@ -149,9 +175,15 @@ func main() {
 		}
 	}
 
-	// Connect to next node only (linear topology: 0->1->2->3...)
-	if *nodeID < *nodeCount-1 {
-		connectToPeer(*nodeID + 1) // Connect to next node
+	// Connect to peers based on topology
+	connections := topo.GetConnections(*nodeID)
+	log.Printf("Node %d connections: %v", *nodeID, connections)
+
+	for _, peerNodeID := range connections {
+		// Only connect to higher-numbered peers to avoid duplicate connections
+		if peerNodeID > *nodeID {
+			connectToPeer(peerNodeID)
+		}
 	}
 
 	// Wait for network setup and peer discovery (important in Shadow)

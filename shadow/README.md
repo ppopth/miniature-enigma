@@ -1,6 +1,8 @@
-# eth-ec-broadcast Shadow Simulation Suite
+# Shadow Network Simulations
 
-This directory contains Shadow network simulation setup for testing eth-ec-broadcast protocols under realistic network conditions. The suite supports three broadcast protocols:
+This directory contains Shadow network simulations for testing eth-ec-broadcast protocols under different network topologies.
+
+## Protocols
 
 - **FloodSub**: Basic message flooding protocol (baseline)
 - **RLNC**: Random Linear Network Coding erasure coding
@@ -8,51 +10,78 @@ This directory contains Shadow network simulation setup for testing eth-ec-broad
 
 ## Prerequisites
 
-1. **Shadow Simulator**: Install from https://shadow.github.io/docs/guide/install.html
-2. **Python 3** with required packages:
-   ```bash
-   pip3 install networkx pyyaml
-   ```
-3. **Go 1.21+** for building the simulation binary
+- **Shadow Simulator**: Install from https://shadow.github.io/
+- **Python 3** with packages: `pip3 install networkx pyyaml`
+- **Go 1.21+**
 
 ## Quick Start
 
+### Run Simulations
 ```bash
-# Run all three protocols with default parameters (10 nodes, 5 messages, 64 bytes each)
-make all
+# Generate topology files (optional - uses default topology if not found)
+cd topology/gen && go build -o topology-gen main.go
+./topology-gen -type ring -nodes 10 -output ../topology-10.json
+cd ../..
 
-# Run all protocols with same parameters and test
-make all NODE_COUNT=20 MSG_SIZE=128 MSG_COUNT=10
-make test-all NODE_COUNT=20 MSG_COUNT=10
+# Run simulations - automatically uses topology/topology-{NODE_COUNT}.json if available
+make floodsub NODE_COUNT=10 MSG_SIZE=64 MSG_COUNT=5
+make rlnc NODE_COUNT=10 MSG_SIZE=64 MSG_COUNT=5
+make rs NODE_COUNT=10 MSG_SIZE=64 MSG_COUNT=5
 
-# Or run individual protocols with different parameters
-make floodsub NODE_COUNT=20 MSG_SIZE=128 MSG_COUNT=10
-make rlnc NODE_COUNT=15 MSG_SIZE=64 MSG_COUNT=5
-make rs NODE_COUNT=12 MSG_SIZE=32 MSG_COUNT=8
+# Or run all protocols with same node count
+make all NODE_COUNT=10 MSG_SIZE=64 MSG_COUNT=5
 
-# Clean up all protocol directories
-make clean
+# Test results
+make test-all NODE_COUNT=10 MSG_COUNT=5
 ```
 
-## Files
+## Architecture: Two-Layer Network Model
 
-- `Makefile` - Master coordinator for all protocol simulations
-- `network_graph.py` - Generates Shadow network topology and configuration
-- `shadow.template.yaml` - Shadow configuration template
-- `test_results.py` - Test script for verifying simulation results from Shadow logs
-- `floodsub/` - FloodSub protocol simulation (main.go + Makefile)
-- `rlnc/` - RLNC erasure coding simulation (main.go + Makefile)
-- `rs/` - Reed-Solomon erasure coding simulation (main.go + Makefile)
+### 1. Shadow Network Layer (Physical Infrastructure)
+- **Managed by**: `network_graph.py` → generates `graph.gml`
+- **Provides**: Realistic internet latencies, bandwidth, packet loss
+- **Geographic regions**: Australia, Europe, Asia, Americas, Africa
+- **Node types**: Supernodes (1Gbps), Fullnodes (50Mbps)
 
-## Network Topology
+### 2. Application Topology Layer (Protocol Connections)
+- **Managed by**: JSON topology files from `topology/gen/`
+- **Provides**: Application-level connection patterns (who talks to whom)
+- **Types**: Linear, ring, mesh, tree, small-world
 
-The simulation uses a realistic global network topology with:
+## How It Works
 
-- **8 geographic regions**: Australia, Europe, East Asia, West Asia, North America (East/West), South Africa, South America
-- **2 node types**:
-  - `supernode`: 1024 Mbps up/down (20% of nodes)
-  - `fullnode`: 50 Mbps up/down (80% of nodes)
-- **Realistic latencies** between regions (e.g., 110ms Australia↔East Asia, 70ms Europe↔NA East)
+1. **Shadow Infrastructure**: `network_graph.py` creates realistic network with geographic latencies
+2. **Application Connections**: Your topology JSON files define which nodes connect at application level
+3. **Combined Effect**: Nodes follow application topology but experience realistic network delays
+4. **Simulation**: Shadow runs multiple instances, each with different `-node-id` and `-topology-file`
+
+## Directory Structure
+
+```
+shadow/
+├── Makefile               # Master build coordinator
+├── network_graph.py       # Generates Shadow network infrastructure
+├── test_results.py        # Validates simulation results
+├── topology/              # Application topology system
+│   ├── topology.go        # Core topology data structure
+│   ├── generators.go      # Topology generation functions
+│   └── gen/               # Topology generator tool
+├── floodsub/              # FloodSub simulation + Makefile
+├── rlnc/                  # RLNC simulation + Makefile
+├── rs/                    # Reed-Solomon simulation + Makefile
+└── TOPOLOGY.md            # Detailed topology documentation
+```
+
+## Available Application Topologies
+
+1. **linear**: Simple chain (0-1-2-3-...)
+2. **ring**: Circular with wraparound
+3. **mesh**: Fully connected
+4. **tree**: Hierarchical (configurable branching)
+5. **small-world**: Watts-Strogatz model
+6. **random-regular**: Random graph with uniform degree
+
+See [TOPOLOGY.md](TOPOLOGY.md) for detailed topology documentation.
 
 ## Simulation Parameters
 
@@ -62,70 +91,21 @@ The simulation uses a realistic global network topology with:
 | `MSG_SIZE` | 64 | Message size in bytes |
 | `MSG_COUNT` | 5 | Number of messages to publish |
 
-## How It Works
-
-1. **Network Generation**: `network_graph.py` creates a GML network graph with realistic global topology
-2. **Shadow Configuration**: Generates `shadow.yaml` with node placement and process definitions
-3. **Simulation**: Each node runs the floodsub protocol, with node 0 publishing messages
-4. **Testing**: `test_results.py` parses Shadow logs to verify message delivery
-
-## Example Output
-
-```
-Shadow Simulation Test Results
-========================================
-Node  0:  5/ 5 messages ✓ PASS
-Node  1:  5/ 5 messages ✓ PASS
-Node  2:  4/ 5 messages ✗ FAIL
-----------------------------------------
-Total messages received: 14
-Expected total: 15
-✗ TEST FAILED: 1 nodes failed to receive all messages
-Failed nodes: [2]
-```
-
-## Advanced Usage
-
-### Running Multiple Scenarios
+## Example: Complete Topology Simulation
 
 ```bash
-# Test different network sizes
-for nodes in 5 10 20 50; do
-    echo "Testing with $nodes nodes"
-    make run-sim NODE_COUNT=$nodes
-    make test NODE_COUNT=$nodes
-    mv shadow.data shadow.data.$nodes
-done
+# Generate a ring topology for 10 nodes
+cd topology/gen && go build -o topology-gen main.go
+./topology-gen -type ring -nodes 10 -output ../topology-10.json
+
+# Run simulation - automatically uses the topology file
+cd ../..
+make floodsub NODE_COUNT=10 MSG_COUNT=5
+
+# Test results
+cd floodsub && make test NODE_COUNT=10 MSG_COUNT=5
 ```
 
-### Custom Network Topology
-
-Modify `network_graph.py` to adjust:
-- Geographic regions and their weights
-- Node types and bandwidth allocation
-- Inter-region latencies
-- Connection patterns
-
-### Testing Results
-
-```bash
-# Test simulation results
-python3 test_results.py 10 5
-
-# Examine Shadow logs directly
-ls shadow.data/hosts/node*/*.stderr
-grep "Received message" shadow.data/hosts/node*/*.stderr
-```
-
-## Troubleshooting
-
-**Shadow not found**: Install Shadow simulator from https://shadow.github.io/
-
-**Python import errors**: Install required packages:
-```bash
-pip3 install networkx pyyaml
-```
-
-**Build failures**: Ensure Go 1.21+ is installed and `go mod tidy` has been run in the project root
-
-**Test failures**: Check Shadow logs in `shadow.data/hosts/node*/*.stderr` for connection or message delivery errors
+The simulation will run with:
+- **Physical layer**: Realistic global internet latencies (Shadow)
+- **Application layer**: Your custom topology connection pattern
