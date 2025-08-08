@@ -6,21 +6,22 @@
 NODE_COUNT ?= 10
 MSG_SIZE ?= 64
 MSG_COUNT ?= 5
+PROGRESS ?= false
 
 # Run floodsub simulation
 floodsub:
 	@echo "Running FloodSub simulation..."
-	cd floodsub && make all NODE_COUNT=$(NODE_COUNT) MSG_SIZE=$(MSG_SIZE) MSG_COUNT=$(MSG_COUNT)
+	cd floodsub && make all NODE_COUNT=$(NODE_COUNT) MSG_SIZE=$(MSG_SIZE) MSG_COUNT=$(MSG_COUNT) PROGRESS=$(PROGRESS)
 
 # Run RLNC simulation
 rlnc:
 	@echo "Running RLNC simulation..."
-	cd rlnc && make all NODE_COUNT=$(NODE_COUNT) MSG_SIZE=$(MSG_SIZE) MSG_COUNT=$(MSG_COUNT)
+	cd rlnc && make all NODE_COUNT=$(NODE_COUNT) MSG_SIZE=$(MSG_SIZE) MSG_COUNT=$(MSG_COUNT) PROGRESS=$(PROGRESS)
 
 # Run Reed-Solomon simulation
 rs:
 	@echo "Running Reed-Solomon simulation..."
-	cd rs && make all NODE_COUNT=$(NODE_COUNT) MSG_SIZE=$(MSG_SIZE) MSG_COUNT=$(MSG_COUNT)
+	cd rs && make all NODE_COUNT=$(NODE_COUNT) MSG_SIZE=$(MSG_SIZE) MSG_COUNT=$(MSG_COUNT) PROGRESS=$(PROGRESS)
 
 # Test all protocol results
 test-all:
@@ -132,11 +133,13 @@ help:
 	@echo "  NODE_COUNT      - Number of nodes (default: $(NODE_COUNT))"
 	@echo "  MSG_SIZE        - Message size in bytes (default: $(MSG_SIZE))"
 	@echo "  MSG_COUNT       - Number of messages (default: $(MSG_COUNT))"
+	@echo "  PROGRESS        - Show Shadow progress bar (default: $(PROGRESS))"
 	@echo ""
 	@echo "Examples:"
 	@echo "  make all                                    # Run all protocols with defaults"
 	@echo "  make floodsub NODE_COUNT=20 MSG_SIZE=128   # Run FloodSub with custom parameters"
 	@echo "  make rlnc NODE_COUNT=15                    # Run RLNC with 15 nodes"
+	@echo "  make floodsub PROGRESS=true                # Run FloodSub with progress bar"
 	@echo "  make test-all                              # Test all existing results"
 	@echo ""
 	@echo "Individual protocol help:"

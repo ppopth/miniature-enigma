@@ -6,6 +6,7 @@
 NODE_COUNT ?= 10
 MSG_SIZE ?= 64
 MSG_COUNT ?= 5
+PROGRESS ?= false
 
 # Check dependencies
 check-deps:
@@ -32,7 +33,7 @@ generate-config: check-deps
 # Run the complete Shadow simulation
 run-sim: build generate-config
 	@echo "Starting RLNC Shadow simulation ($(NODE_COUNT) nodes, $(MSG_COUNT) messages of $(MSG_SIZE) bytes)..."
-	shadow shadow-rlnc.yaml
+	shadow --progress $(PROGRESS) shadow-rlnc.yaml
 	@echo "RLNC simulation completed"
 
 # Test simulation results by reading Shadow logs
@@ -72,8 +73,10 @@ help:
 	@echo "  NODE_COUNT      - Number of nodes (default: $(NODE_COUNT))"
 	@echo "  MSG_SIZE        - Message size in bytes (default: $(MSG_SIZE))"
 	@echo "  MSG_COUNT       - Number of messages (default: $(MSG_COUNT))"
+	@echo "  PROGRESS        - Show Shadow progress bar (default: $(PROGRESS))"
 	@echo ""
 	@echo "Examples:"
 	@echo "  make all                                    # Run with defaults"
 	@echo "  make run-sim NODE_COUNT=20 MSG_SIZE=128    # Custom parameters"
+	@echo "  make run-sim PROGRESS=true                 # Run with progress bar"
 	@echo "  make test                                  # Test existing results"
