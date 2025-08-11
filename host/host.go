@@ -69,8 +69,15 @@ func NewHost(opts ...HostOption) (*Host, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	// Wrap UDP connection to hide SyscallConn for Shadow compatibility
+	var conn net.PacketConn = udpConn
+	if host.shadowMode {
+		conn = &shadowUDPConn{PacketConn: udpConn}
+	}
+
 	host.transport = &quic.Transport{
-		Conn: udpConn,
+		Conn: conn,
 	}
 
 	// Create self-signed certificate from identity
@@ -276,6 +283,23 @@ func WithAddrPort(ep netip.AddrPort) HostOption {
 	}
 }
 
+// WithShadowMode enables Shadow simulator compatibility mode
+func WithShadowMode() HostOption {
+	return func(h *Host) error {
+		h.shadowMode = true
+		return nil
+	}
+}
+
+// shadowUDPConn wraps a net.PacketConn to hide the SyscallConn interface
+// This prevents quic-go from setting DF flags that are not supported in Shadow
+type shadowUDPConn struct {
+	net.PacketConn
+}
+
+// Ensure shadowUDPConn only implements net.PacketConn, not syscall.Conn
+var _ net.PacketConn = (*shadowUDPConn)(nil)
+
 // WithIdentity sets the host's identity from a private key
 func WithIdentity(privateKey crypto.PrivateKey) HostOption {
 	return func(h *Host) error {
@@ -314,6 +338,8 @@ type Host struct {
 	mutex sync.Mutex // Protects connections map
 
 	connections map[peer.ID]quic.Connection // Active peer connections
+
+	shadowMode bool // Enable Shadow simulator compatibility mode
 
 	certificate *tls.Certificate  // Self-signed TLS certificate
 	endpoint    *net.UDPAddr      // Local UDP endpoint
