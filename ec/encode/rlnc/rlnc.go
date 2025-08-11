@@ -114,16 +114,24 @@ func (r *RlncEncoder) VerifyThenAddChunk(chunk encode.Chunk) bool {
 
 	existingChunks := r.chunks[messageID]
 
-	// Build coefficient vectors for linear independence check
-	var coefficientVectors [][]field.Element
-	for _, existingChunk := range existingChunks {
-		coefficientVectors = append(coefficientVectors, existingChunk.Coeffs)
-	}
-	coefficientVectors = append(coefficientVectors, rlncChunk.Coeffs)
+	// Determine minimum chunks needed for reconstruction
+	minChunksNeeded := len(rlncChunk.Coeffs)
 
-	// Check if the new chunk adds linearly independent information
-	if !field.IsLinearlyIndependent(coefficientVectors, r.config.Field) {
-		return false
+	// Only check linear independence when we're close to having enough chunks
+	// Skip the check if we have fewer than (minChunksNeeded - 2) chunks
+	// This optimization avoids expensive computation early on when chunks are likely independent
+	if len(existingChunks) >= minChunksNeeded-2 {
+		// Build coefficient vectors for linear independence check
+		var coefficientVectors [][]field.Element
+		for _, existingChunk := range existingChunks {
+			coefficientVectors = append(coefficientVectors, existingChunk.Coeffs)
+		}
+		coefficientVectors = append(coefficientVectors, rlncChunk.Coeffs)
+
+		// Check if the new chunk adds linearly independent information
+		if !field.IsLinearlyIndependent(coefficientVectors, r.config.Field) {
+			return false
+		}
 	}
 
 	// Add chunk to storage
