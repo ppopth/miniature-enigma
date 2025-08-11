@@ -61,8 +61,9 @@ type RlncEncoder struct {
 	messageBitsPerElement int // Bits per field element for message data
 	networkBitsPerElement int // Bits per field element for network data
 
-	mutex  sync.Mutex         // Protects chunks map
-	chunks map[string][]Chunk // Storage for chunks by message ID
+	mutex     sync.Mutex                   // Protects chunks map and REF data
+	chunks    map[string][]Chunk           // Storage for chunks by message ID
+	coeffsREF map[string][][]field.Element // REF form of coefficient vectors by message ID
 }
 
 func NewRlncEncoder(config *RlncEncoderConfig) (*RlncEncoder, error) {
@@ -70,8 +71,9 @@ func NewRlncEncoder(config *RlncEncoderConfig) (*RlncEncoder, error) {
 		config = DefaultRlncEncoderConfig()
 	}
 	r := &RlncEncoder{
-		config: config,
-		chunks: make(map[string][]Chunk),
+		config:    config,
+		chunks:    make(map[string][]Chunk),
+		coeffsREF: make(map[string][][]field.Element),
 	}
 
 	if (8*r.config.MessageChunkSize)%r.config.ElementsPerChunk != 0 {
@@ -112,30 +114,19 @@ func (r *RlncEncoder) VerifyThenAddChunk(chunk encode.Chunk) bool {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
 
-	existingChunks := r.chunks[messageID]
+	// Use REF-optimized incremental independence check
+	existingREF := r.coeffsREF[messageID]
 
-	// Determine minimum chunks needed for reconstruction
-	minChunksNeeded := len(rlncChunk.Coeffs)
-
-	// Only check linear independence when we're close to having enough chunks
-	// Skip the check if we have fewer than (minChunksNeeded - 2) chunks
-	// This optimization avoids expensive computation early on when chunks are likely independent
-	if len(existingChunks) >= minChunksNeeded-2 {
-		// Build coefficient vectors for linear independence check
-		var coefficientVectors [][]field.Element
-		for _, existingChunk := range existingChunks {
-			coefficientVectors = append(coefficientVectors, existingChunk.Coeffs)
-		}
-		coefficientVectors = append(coefficientVectors, rlncChunk.Coeffs)
-
-		// Check if the new chunk adds linearly independent information
-		if !field.IsLinearlyIndependent(coefficientVectors, r.config.Field) {
-			return false
-		}
+	// Check if the new chunk adds linearly independent information and get updated REF
+	newREF, isIndependent := field.IsLinearlyIndependentIncremental(existingREF, rlncChunk.Coeffs, r.config.Field)
+	if !isIndependent {
+		return false
 	}
 
-	// Add chunk to storage
+	// Add chunk to storage and update REF
 	r.chunks[messageID] = append(r.chunks[messageID], rlncChunk)
+	r.coeffsREF[messageID] = newREF
+
 	return true
 }
 
@@ -272,6 +263,13 @@ func (r *RlncEncoder) GenerateThenAddChunks(messageID string, message []byte) (i
 	// Store chunks in internal storage
 	r.mutex.Lock()
 	r.chunks[messageID] = chunks
+
+	// Identity matrix is already in REF - just copy coefficient vectors directly
+	r.coeffsREF[messageID] = make([][]field.Element, len(chunks))
+	for i, chunk := range chunks {
+		r.coeffsREF[messageID][i] = make([]field.Element, len(chunk.Coeffs))
+		copy(r.coeffsREF[messageID][i], chunk.Coeffs)
+	}
 	r.mutex.Unlock()
 
 	return len(chunks), nil
