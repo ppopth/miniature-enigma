@@ -468,6 +468,282 @@ func TestIsLinearlyIndependent_RandomWithDependency(t *testing.T) {
 	}
 }
 
+// TestIsLinearlyIndependentIncremental_EmptyExisting tests incremental with empty existing set
+func TestIsLinearlyIndependentIncremental_EmptyExisting(t *testing.T) {
+	field := NewPrimeField(p)
+	var existingVectors [][]Element
+
+	// Non-zero vector should be independent
+	newVector := []Element{
+		field.FromBytes(big.NewInt(3).Bytes()),
+		field.FromBytes(big.NewInt(1).Bytes()),
+	}
+	newREF, isIndependent := IsLinearlyIndependentIncremental(existingVectors, newVector, field)
+	if !isIndependent {
+		t.Errorf("Non-zero vector should be independent when no existing vectors")
+	}
+	if isIndependent && newREF == nil {
+		t.Errorf("newREF should not be nil for independent vector")
+	}
+	if isIndependent && newREF != nil && !IsRowEchelonForm(newREF) {
+		t.Errorf("Returned matrix should be in REF form")
+	}
+
+	// Zero vector should not be independent
+	zeroVector := []Element{field.Zero(), field.Zero()}
+	newREF, isIndependent = IsLinearlyIndependentIncremental(existingVectors, zeroVector, field)
+	if isIndependent {
+		t.Errorf("Zero vector should not be independent")
+	}
+	if newREF != nil {
+		t.Errorf("Should return nil matrix for dependent vector")
+	}
+}
+
+// TestIsLinearlyIndependentIncremental_Independent tests adding independent vector
+func TestIsLinearlyIndependentIncremental_Independent(t *testing.T) {
+	field := NewPrimeField(p)
+
+	existingVectors := [][]Element{
+		{field.One(), field.Zero(), field.Zero()},
+		{field.Zero(), field.One(), field.Zero()},
+	}
+
+	// Adding a linearly independent vector
+	newVector := []Element{field.Zero(), field.Zero(), field.One()}
+
+	newREF, isIndependent := IsLinearlyIndependentIncremental(existingVectors, newVector, field)
+	if !isIndependent {
+		t.Errorf("Should be independent: orthogonal to existing vectors")
+	}
+	if isIndependent && newREF == nil {
+		t.Errorf("newREF should not be nil for independent vector")
+	}
+	if isIndependent && newREF != nil && !IsRowEchelonForm(newREF) {
+		t.Errorf("Returned matrix should be in REF form")
+	}
+}
+
+// TestIsLinearlyIndependentIncremental_Dependent tests adding dependent vector
+func TestIsLinearlyIndependentIncremental_Dependent(t *testing.T) {
+	field := NewPrimeField(p)
+
+	existingVectors := [][]Element{
+		{field.One(), field.Zero(), field.Zero()},
+		{field.Zero(), field.One(), field.Zero()},
+	}
+
+	// Adding a vector that's a linear combination of existing ones
+	newVector := []Element{
+		field.FromBytes(big.NewInt(3).Bytes()),
+		field.FromBytes(big.NewInt(2).Bytes()),
+		field.Zero(),
+	} // newVector = 3 * v1 + 2 * v2
+
+	newREF, isIndependent := IsLinearlyIndependentIncremental(existingVectors, newVector, field)
+	if isIndependent {
+		t.Errorf("Should be dependent: linear combination of existing vectors")
+	}
+	if newREF != nil {
+		t.Errorf("Should return nil matrix for dependent vector")
+	}
+}
+
+// TestIsLinearlyIndependentIncremental_FullRank tests when we already have full rank
+func TestIsLinearlyIndependentIncremental_FullRank(t *testing.T) {
+	field := NewPrimeField(p)
+
+	// Already have 2 independent vectors in 2D space
+	existingVectors := [][]Element{
+		{field.One(), field.Zero()},
+		{field.Zero(), field.One()},
+	}
+
+	// Any new vector in 2D space must be dependent
+	newVector := []Element{
+		field.FromBytes(big.NewInt(5).Bytes()),
+		field.FromBytes(big.NewInt(7).Bytes()),
+	}
+
+	newREF, isIndependent := IsLinearlyIndependentIncremental(existingVectors, newVector, field)
+	if isIndependent {
+		t.Errorf("Should be dependent: already have full rank")
+	}
+	if newREF != nil {
+		t.Errorf("Should return nil matrix for dependent vector")
+	}
+}
+
+// TestIsLinearlyIndependentIncremental_ConsistentWithOriginal tests that incremental gives same result as original
+func TestIsLinearlyIndependentIncremental_ConsistentWithOriginal(t *testing.T) {
+	field := NewPrimeField(p)
+
+	// Test several scenarios
+	testCases := []struct {
+		name     string
+		existing [][]Element
+		newVec   []Element
+	}{
+		{
+			name: "independent_case",
+			existing: [][]Element{
+				{field.One(), field.Zero(), field.Zero()},
+				{field.Zero(), field.One(), field.Zero()},
+			},
+			newVec: []Element{field.Zero(), field.Zero(), field.One()},
+		},
+		{
+			name: "dependent_case",
+			existing: [][]Element{
+				{field.One(), field.Zero()},
+				{field.Zero(), field.One()},
+			},
+			newVec: []Element{field.One(), field.One()},
+		},
+		{
+			name: "single_existing",
+			existing: [][]Element{
+				{field.One(), field.Zero(), field.Zero()},
+			},
+			newVec: []Element{field.Zero(), field.One(), field.Zero()},
+		},
+		{
+			name: "zero_at_0_0",
+			existing: [][]Element{
+				{field.Zero(), field.One(), field.Zero()},
+				{field.Zero(), field.Zero(), field.One()},
+			},
+			newVec: []Element{field.FromBytes(big.NewInt(3).Bytes()), field.FromBytes(big.NewInt(2).Bytes()), field.Zero()},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Test cases are already in REF form - test directly
+			newREF, incrementalResult := IsLinearlyIndependentIncremental(tc.existing, tc.newVec, field)
+
+			// Test with original version using all vectors
+			allVectors := make([][]Element, len(tc.existing)+1)
+			copy(allVectors, tc.existing)
+			allVectors[len(tc.existing)] = tc.newVec
+			originalResult := IsLinearlyIndependent(allVectors, field)
+
+			if incrementalResult != originalResult {
+				t.Errorf("REF Incremental (%v) != Original (%v)", incrementalResult, originalResult)
+			}
+
+			// Verify that returned matrix is in REF (when independent)
+			if incrementalResult && newREF != nil {
+				if !IsRowEchelonForm(newREF) {
+					t.Errorf("Returned matrix is not in REF form")
+				}
+			}
+		})
+	}
+}
+
+// TestIsRowEchelonForm tests the REF verification function
+func TestIsRowEchelonForm(t *testing.T) {
+	field := NewPrimeField(p)
+
+	// Test case 1: Empty matrix (should be REF)
+	if !IsRowEchelonForm([][]Element{}) {
+		t.Errorf("Empty matrix should be in REF")
+	}
+
+	// Test case 2: Single row (non-zero) - should be REF
+	singleRow := [][]Element{
+		{field.FromBytes(big.NewInt(3).Bytes()), field.FromBytes(big.NewInt(1).Bytes()), field.Zero()},
+	}
+	if !IsRowEchelonForm(singleRow) {
+		t.Errorf("Single non-zero row should be in REF")
+	}
+
+	// Test case 3: Single zero row - should be REF
+	zeroRow := [][]Element{
+		{field.Zero(), field.Zero(), field.Zero()},
+	}
+	if !IsRowEchelonForm(zeroRow) {
+		t.Errorf("Single zero row should be in REF")
+	}
+
+	// Test case 4: Identity matrix - should be REF
+	identity := [][]Element{
+		{field.One(), field.Zero(), field.Zero()},
+		{field.Zero(), field.One(), field.Zero()},
+		{field.Zero(), field.Zero(), field.One()},
+	}
+	if !IsRowEchelonForm(identity) {
+		t.Errorf("Identity matrix should be in REF")
+	}
+
+	// Test case 5: Proper REF matrix
+	properREF := [][]Element{
+		{field.FromBytes(big.NewInt(2).Bytes()), field.FromBytes(big.NewInt(3).Bytes()), field.FromBytes(big.NewInt(1).Bytes()), field.FromBytes(big.NewInt(4).Bytes())},
+		{field.Zero(), field.Zero(), field.FromBytes(big.NewInt(5).Bytes()), field.FromBytes(big.NewInt(2).Bytes())},
+		{field.Zero(), field.Zero(), field.Zero(), field.FromBytes(big.NewInt(7).Bytes())},
+	}
+	if !IsRowEchelonForm(properREF) {
+		t.Errorf("Proper REF matrix should be identified as REF")
+	}
+
+	// Test case 6: REF with zero rows at bottom
+	refWithZeros := [][]Element{
+		{field.One(), field.FromBytes(big.NewInt(2).Bytes()), field.FromBytes(big.NewInt(3).Bytes())},
+		{field.Zero(), field.Zero(), field.FromBytes(big.NewInt(4).Bytes())},
+		{field.Zero(), field.Zero(), field.Zero()},
+		{field.Zero(), field.Zero(), field.Zero()},
+	}
+	if !IsRowEchelonForm(refWithZeros) {
+		t.Errorf("REF matrix with zero rows at bottom should be identified as REF")
+	}
+
+	// Test case 7: NOT REF - pivot not to the right of previous
+	notREF1 := [][]Element{
+		{field.Zero(), field.FromBytes(big.NewInt(2).Bytes()), field.FromBytes(big.NewInt(3).Bytes())}, // pivot at col 1
+		{field.FromBytes(big.NewInt(1).Bytes()), field.Zero(), field.FromBytes(big.NewInt(4).Bytes())}, // pivot at col 0 - VIOLATION!
+	}
+	if IsRowEchelonForm(notREF1) {
+		t.Errorf("Matrix with pivot not to the right should NOT be REF")
+	}
+
+	// Test case 8: NOT REF - equal pivot positions
+	notREF2 := [][]Element{
+		{field.Zero(), field.FromBytes(big.NewInt(2).Bytes()), field.FromBytes(big.NewInt(3).Bytes())}, // pivot at col 1
+		{field.Zero(), field.FromBytes(big.NewInt(5).Bytes()), field.FromBytes(big.NewInt(4).Bytes())}, // pivot at col 1 - VIOLATION!
+	}
+	if IsRowEchelonForm(notREF2) {
+		t.Errorf("Matrix with equal pivot positions should NOT be REF")
+	}
+
+	// Test case 9: NOT REF - non-zero below pivot
+	notREF3 := [][]Element{
+		{field.FromBytes(big.NewInt(1).Bytes()), field.FromBytes(big.NewInt(2).Bytes())}, // pivot at col 0
+		{field.FromBytes(big.NewInt(3).Bytes()), field.FromBytes(big.NewInt(4).Bytes())}, // non-zero at col 0 below pivot - VIOLATION!
+	}
+	if IsRowEchelonForm(notREF3) {
+		t.Errorf("Matrix with non-zero below pivot should NOT be REF")
+	}
+
+	// Test case 10: NOT REF - zero row above non-zero row
+	notREF4 := [][]Element{
+		{field.Zero(), field.Zero(), field.Zero()},                                                     // zero row
+		{field.Zero(), field.FromBytes(big.NewInt(1).Bytes()), field.FromBytes(big.NewInt(2).Bytes())}, // non-zero row - VIOLATION!
+	}
+	if IsRowEchelonForm(notREF4) {
+		t.Errorf("Matrix with zero row above non-zero row should NOT be REF")
+	}
+
+	// Test case 11: Edge case - all zero matrix
+	allZeros := [][]Element{
+		{field.Zero(), field.Zero(), field.Zero()},
+		{field.Zero(), field.Zero(), field.Zero()},
+	}
+	if !IsRowEchelonForm(allZeros) {
+		t.Errorf("All-zero matrix should be in REF")
+	}
+}
+
 // Benchmarks
 
 func BenchmarkIsLinearlyIndependent(b *testing.B) {
@@ -488,6 +764,90 @@ func BenchmarkIsLinearlyIndependent(b *testing.B) {
 		b.Run(fmt.Sprintf("vectors=%d", size), func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				_ = IsLinearlyIndependent(vectors, field)
+			}
+		})
+	}
+}
+
+func BenchmarkIsLinearlyIndependentIncremental(b *testing.B) {
+	// Use RLNC-typical large prime field
+	p := new(big.Int).Exp(big.NewInt(2), big.NewInt(256), nil)
+	p.Add(p, big.NewInt(297))
+	field := NewPrimeField(p)
+
+	sizes := []int{4, 8, 16, 32}
+	for _, size := range sizes {
+		// Test case 1: Independent case - existing vectors don't span full space
+		existingVectorsIndep := make([][]Element, size-1)
+		for i := 0; i < size-1; i++ {
+			existingVectorsIndep[i] = make([]Element, size)
+			for j := 0; j < size; j++ {
+				if i == j {
+					existingVectorsIndep[i][j] = field.One()
+				} else {
+					existingVectorsIndep[i][j] = field.Zero()
+				}
+			}
+		}
+		// New vector fills the missing dimension (independent)
+		newVectorIndep := make([]Element, size)
+		for j := 0; j < size; j++ {
+			if j == size-1 {
+				newVectorIndep[j] = field.One() // Last dimension
+			} else {
+				elem, _ := field.RandomMax(8)
+				newVectorIndep[j] = elem
+			}
+		}
+
+		b.Run(fmt.Sprintf("incremental_independent_size=%d", size), func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				_, _ = IsLinearlyIndependentIncremental(existingVectorsIndep, newVectorIndep, field)
+			}
+		})
+
+		allVectorsIndep := make([][]Element, size)
+		copy(allVectorsIndep, existingVectorsIndep)
+		allVectorsIndep[size-1] = newVectorIndep
+
+		b.Run(fmt.Sprintf("original_independent_size=%d", size), func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				_ = IsLinearlyIndependent(allVectorsIndep, field)
+			}
+		})
+
+		// Test case 2: Dependent case - existing vectors span full space
+		existingVectorsDep := make([][]Element, size)
+		for i := 0; i < size; i++ {
+			existingVectorsDep[i] = make([]Element, size)
+			for j := 0; j < size; j++ {
+				if i == j {
+					existingVectorsDep[i][j] = field.One()
+				} else {
+					existingVectorsDep[i][j] = field.Zero()
+				}
+			}
+		}
+		// New vector with random elements (will be dependent since we have full rank)
+		newVectorDep := make([]Element, size)
+		for j := 0; j < size; j++ {
+			elem, _ := field.RandomMax(8)
+			newVectorDep[j] = elem
+		}
+
+		b.Run(fmt.Sprintf("incremental_dependent_size=%d", size), func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				_, _ = IsLinearlyIndependentIncremental(existingVectorsDep, newVectorDep, field)
+			}
+		})
+
+		allVectorsDep := make([][]Element, size+1)
+		copy(allVectorsDep, existingVectorsDep)
+		allVectorsDep[size] = newVectorDep
+
+		b.Run(fmt.Sprintf("original_dependent_size=%d", size), func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				_ = IsLinearlyIndependent(allVectorsDep, field)
 			}
 		})
 	}

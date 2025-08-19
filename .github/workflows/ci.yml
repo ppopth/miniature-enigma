@@ -110,7 +110,9 @@ jobs:
         make rlnc NODE_COUNT=5 MSG_COUNT=3
         echo "Testing Reed-Solomon protocol..."
         make rs NODE_COUNT=5 MSG_COUNT=3
-      timeout-minutes: 15
+        echo "Testing all topology types with all protocols..."
+        make all-topologies
+      timeout-minutes: 30
 
     - name: Upload Shadow logs on failure
       if: failure()
