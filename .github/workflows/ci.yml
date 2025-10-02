@@ -91,9 +91,10 @@ jobs:
           python3-networkx \
           xz-utils
 
-        # Build and install Shadow from source
-        git clone --depth 1 https://github.com/shadow/shadow.git shadow-simulator
+        # Build and install Shadow v3.2.0 from source
+        git clone --depth 1 --branch v3.2.0 https://github.com/shadow/shadow.git shadow-simulator
         cd shadow-simulator
+        git checkout v3.2.0
         ./setup build --clean
         ./setup install
         echo "$HOME/.local/bin" >> $GITHUB_PATH
