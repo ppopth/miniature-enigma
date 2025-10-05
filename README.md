@@ -12,6 +12,8 @@ A Go-based peer-to-peer (P2P) broadcast system implementing erasure coding proto
 - **Group Operations**: Cryptographic primitives including Ristretto255 for verification systems
 - **Chunk Verification**: Pluggable verification system with Pedersen commitment support
 - **QUIC Transport**: Modern, secure transport layer with TLS authentication
+  - **Datagrams**: Unreliable, unordered delivery for low-latency applications
+  - **Streams**: Reliable, ordered delivery with flow control
 - **Modular Design**: Clean separation between networking, pubsub, and erasure coding layers
 
 ## Quick Start
@@ -85,7 +87,7 @@ make deps           # Download and verify dependencies
 make build          # Build all packages
 make test           # Run tests with race detection
 make test-short     # Run tests without race detection
-make coverage       # Run tests with coverage
+make coverage       # Run tests with coverage report
 make bench          # Run benchmarks for all packages
 make bench-rlnc     # Run RLNC encoder benchmarks
 make bench-rs       # Run Reed-Solomon encoder benchmarks

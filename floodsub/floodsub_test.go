@@ -118,6 +118,22 @@ func getHosts(t *testing.T, n int) []*host.Host {
 	return hs
 }
 
+func getHostsWithTransport(t *testing.T, n int, mode host.TransportMode) []*host.Host {
+	var hs []*host.Host
+
+	for i := 0; i < n; i++ {
+		h, err := host.NewHost(
+			host.WithAddrPort(netip.MustParseAddrPort("127.0.0.1:0")),
+			host.WithTransportMode(mode),
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		hs = append(hs, h)
+	}
+	return hs
+}
+
 func getPubsubs(t *testing.T, hs []*host.Host) []*pubsub.PubSub {
 	var psubs []*pubsub.PubSub
 	for _, h := range hs {
@@ -328,6 +344,130 @@ func TestFloodsubConnectBeforeSubscribe(t *testing.T) {
 		topics = append(topics, tp)
 		subs = append(subs, sub)
 	}
+
+	msgs := make(map[string]struct{})
+	msgs["foo"] = struct{}{}
+	msgs["bar"] = struct{}{}
+
+	var wg sync.WaitGroup
+	var lk sync.Mutex
+	received := make([]map[string]struct{}, len(subs))
+	for i := range received {
+		received[i] = make(map[string]struct{})
+	}
+
+	for i, sub := range subs {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for _ = range msgs {
+				buf, err := sub.Next(context.Background())
+				if err != nil {
+					t.Fatal(err)
+				}
+				lk.Lock()
+				received[i][string(buf)] = struct{}{}
+				lk.Unlock()
+			}
+		}()
+	}
+
+	time.Sleep(200 * time.Millisecond)
+
+	for m := range msgs {
+		topics[0].Publish([]byte(m))
+	}
+	wg.Wait()
+
+	for i := range received {
+		if !maps.Equal(received[i], msgs) {
+			t.Fatalf("node %d received %v but expected %v", i, maps.Keys(received[i]), maps.Keys(msgs))
+		}
+	}
+}
+
+func TestFloodsubSparseWithStreams(t *testing.T) {
+	hosts := getHostsWithTransport(t, 20, host.TransportStream)
+	psubs := getPubsubs(t, hosts)
+
+	var topics []*pubsub.Topic
+	var subs []*pubsub.Subscription
+	for _, ps := range psubs {
+		tp, err := ps.Join("foobar", NewFloodsubRouter(hashSha256))
+		if err != nil {
+			t.Fatal(err)
+		}
+		sub, err := tp.Subscribe()
+		if err != nil {
+			t.Fatal(err)
+		}
+		topics = append(topics, tp)
+		subs = append(subs, sub)
+	}
+
+	sparseConnect(t, hosts)
+
+	msgs := make(map[string]struct{})
+	msgs["foo"] = struct{}{}
+	msgs["bar"] = struct{}{}
+
+	var wg sync.WaitGroup
+	var lk sync.Mutex
+	received := make([]map[string]struct{}, len(subs))
+	for i := range received {
+		received[i] = make(map[string]struct{})
+	}
+
+	for i, sub := range subs {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for _ = range msgs {
+				buf, err := sub.Next(context.Background())
+				if err != nil {
+					t.Fatal(err)
+				}
+				lk.Lock()
+				received[i][string(buf)] = struct{}{}
+				lk.Unlock()
+			}
+		}()
+	}
+
+	time.Sleep(200 * time.Millisecond)
+
+	for m := range msgs {
+		topics[0].Publish([]byte(m))
+	}
+	wg.Wait()
+
+	for i := range received {
+		if !maps.Equal(received[i], msgs) {
+			t.Fatalf("node %d received %v but expected %v", i, maps.Keys(received[i]), maps.Keys(msgs))
+		}
+	}
+}
+
+func TestFloodsubDenseWithStreams(t *testing.T) {
+	hosts := getHostsWithTransport(t, 20, host.TransportStream)
+	psubs := getPubsubs(t, hosts)
+
+	var topics []*pubsub.Topic
+	var subs []*pubsub.Subscription
+	for _, ps := range psubs {
+		tp, err := ps.Join("foobar", NewFloodsubRouter(hashSha256))
+		if err != nil {
+			t.Fatal(err)
+		}
+		sub, err := tp.Subscribe()
+		if err != nil {
+			t.Fatal(err)
+		}
+		topics = append(topics, tp)
+		subs = append(subs, sub)
+	}
+
+	denseConnect(t, hosts)
 
 	msgs := make(map[string]struct{})
 	msgs["foo"] = struct{}{}

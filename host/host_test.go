@@ -167,8 +167,8 @@ func TestHandlers(t *testing.T) {
 	added = make(map[peer.ID]struct{})
 	removed = make(map[peer.ID]struct{})
 
-	h1.connections[s.peerID].CloseWithError(0, "")
-	h2.connections[s.peerID].CloseWithError(0, "")
+	h1.connections[s.peerID].Close()
+	h2.connections[s.peerID].Close()
 	time.Sleep(50 * time.Millisecond)
 
 	if !maps.Equal(added, empty) {
@@ -196,6 +196,146 @@ func TestClose(t *testing.T) {
 		t.Fatal(err)
 	}
 	time.Sleep(50 * time.Millisecond)
+	h1.Close()
+	h2.Close()
+}
+
+func TestStreamMode(t *testing.T) {
+	h1, err := NewHost(
+		WithAddrPort(netip.MustParseAddrPort("127.0.0.1:0")),
+		WithTransportMode(TransportStream),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h2, err := NewHost(
+		WithAddrPort(netip.MustParseAddrPort("127.0.0.1:0")),
+		WithTransportMode(TransportStream),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Setup message receiver
+	received := make(chan []byte, 1)
+	h2.SetPeerHandlers(
+		func(p peer.ID, conn Connection) {
+			go func() {
+				msg, err := conn.Receive(context.Background())
+				if err != nil {
+					t.Errorf("failed to receive: %v", err)
+					return
+				}
+				received <- msg
+			}()
+		},
+		func(p peer.ID) {},
+	)
+
+	addr := h2.LocalAddr()
+	if err := h1.Connect(context.Background(), addr); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(100 * time.Millisecond)
+
+	// Send message from h1 to h2
+	testMsg := []byte("Hello via QUIC stream!")
+	h1.mutex.Lock()
+	var conn Connection
+	for _, c := range h1.connections {
+		conn = c
+		break
+	}
+	h1.mutex.Unlock()
+
+	if conn == nil {
+		t.Fatal("no connection found")
+	}
+
+	if err := conn.Send(testMsg); err != nil {
+		t.Fatalf("failed to send: %v", err)
+	}
+
+	// Verify message received
+	select {
+	case msg := <-received:
+		if string(msg) != string(testMsg) {
+			t.Fatalf("received message %q, expected %q", msg, testMsg)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for message")
+	}
+
+	h1.Close()
+	h2.Close()
+}
+
+func TestDatagramMode(t *testing.T) {
+	h1, err := NewHost(
+		WithAddrPort(netip.MustParseAddrPort("127.0.0.1:0")),
+		WithTransportMode(TransportDatagram),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h2, err := NewHost(
+		WithAddrPort(netip.MustParseAddrPort("127.0.0.1:0")),
+		WithTransportMode(TransportDatagram),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Setup message receiver
+	received := make(chan []byte, 1)
+	h2.SetPeerHandlers(
+		func(p peer.ID, conn Connection) {
+			go func() {
+				msg, err := conn.Receive(context.Background())
+				if err != nil {
+					t.Errorf("failed to receive: %v", err)
+					return
+				}
+				received <- msg
+			}()
+		},
+		func(p peer.ID) {},
+	)
+
+	addr := h2.LocalAddr()
+	if err := h1.Connect(context.Background(), addr); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(100 * time.Millisecond)
+
+	// Send message from h1 to h2
+	testMsg := []byte("Hello via QUIC datagram!")
+	h1.mutex.Lock()
+	var conn Connection
+	for _, c := range h1.connections {
+		conn = c
+		break
+	}
+	h1.mutex.Unlock()
+
+	if conn == nil {
+		t.Fatal("no connection found")
+	}
+
+	if err := conn.Send(testMsg); err != nil {
+		t.Fatalf("failed to send: %v", err)
+	}
+
+	// Verify message received
+	select {
+	case msg := <-received:
+		if string(msg) != string(testMsg) {
+			t.Fatalf("received message %q, expected %q", msg, testMsg)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for message")
+	}
+
 	h1.Close()
 	h2.Close()
 }

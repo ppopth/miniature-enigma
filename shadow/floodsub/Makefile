@@ -30,9 +30,17 @@ generate-config: check-deps
 	@test -f shadow-floodsub.yaml && test -f graph.gml || (echo "Config generation failed" && exit 1)
 	@echo "Configuration generated"
 
+# Generate network graph and Shadow configuration for streams
+generate-config-streams: check-deps
+	@echo "Generating Shadow network configuration for $(NODE_COUNT) nodes (floodsub with streams)..."
+	python3 ../network_graph.py $(NODE_COUNT) $(MSG_SIZE) $(MSG_COUNT) floodsub --use-streams
+	@test -f shadow-floodsub.yaml && test -f graph.gml || (echo "Config generation failed" && exit 1)
+	@echo "Configuration generated (with QUIC streams)"
+
 # Run the complete Shadow simulation
 run-sim: build generate-config
 	@echo "Starting FloodSub Shadow simulation ($(NODE_COUNT) nodes, $(MSG_COUNT) messages of $(MSG_SIZE) bytes)..."
+	@rm -rf shadow.data/
 	shadow --progress $(PROGRESS) shadow-floodsub.yaml
 	@echo "FloodSub simulation completed"
 
@@ -51,8 +59,18 @@ clean:
 	rm -rf shadow.data/
 	@echo "Cleanup completed"
 
+# Run the complete Shadow simulation with QUIC streams
+run-sim-streams: build generate-config-streams
+	@echo "Starting FloodSub Shadow simulation with QUIC streams ($(NODE_COUNT) nodes, $(MSG_COUNT) messages of $(MSG_SIZE) bytes)..."
+	@rm -rf shadow.data/
+	shadow --progress $(PROGRESS) shadow-floodsub.yaml
+	@echo "FloodSub simulation with streams completed"
+
 # Complete workflow: build, run, and test
 all: run-sim test
+
+# Complete workflow with QUIC streams: build, run, and test
+all-streams: run-sim-streams test
 
 # Help target
 help:

@@ -60,12 +60,13 @@ go build
 ### Build All Examples
 ```bash
 # From the repository root
-make example
+make example        # Build all example applications
+make example-linux  # Cross compile for Linux
 
 # Or build individually
+cd examples/simple && go build
 cd examples/rlnc-network && go build
 cd examples/rs-network && go build
-cd examples/simple && go build
 ```
 
 ### Test Network Topologies

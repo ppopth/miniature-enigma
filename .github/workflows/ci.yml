@@ -107,6 +107,8 @@ jobs:
         cd shadow
         echo "Testing FloodSub protocol..."
         make floodsub NODE_COUNT=5 MSG_COUNT=3
+        echo "Testing FloodSub protocol with QUIC streams..."
+        make floodsub-streams NODE_COUNT=5 MSG_COUNT=3
         echo "Testing RLNC protocol..."
         make rlnc NODE_COUNT=5 MSG_COUNT=3
         echo "Testing Reed-Solomon protocol..."

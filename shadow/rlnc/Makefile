@@ -34,6 +34,7 @@ generate-config: check-deps
 # Run the complete Shadow simulation
 run-sim: build generate-config
 	@echo "Starting RLNC Shadow simulation ($(NODE_COUNT) nodes, $(MSG_COUNT) messages of $(MSG_SIZE) bytes, $(NUM_CHUNKS) chunks)..."
+	@rm -rf shadow.data/
 	shadow --progress $(PROGRESS) shadow-rlnc.yaml
 	@echo "RLNC simulation completed"
 

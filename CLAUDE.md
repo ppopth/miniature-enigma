@@ -11,6 +11,8 @@ This is a Go-based peer-to-peer (P2P) broadcast system focused on erasure coding
   - **RLNC (Random Linear Network Coding)**: Uses linear combinations over finite fields for efficient and resilient broadcast
   - **Reed-Solomon**: Systematic MDS codes for efficient erasure coding with predictable chunk indices
 
+The networking layer supports both QUIC datagrams (unreliable, unordered) and QUIC streams (reliable, ordered) for flexible transport options.
+
 ## Architecture
 
 ### Core Components
@@ -45,10 +47,15 @@ make build                 # Build all packages
 make test                  # Run all tests with race detection
 make test-short           # Run tests without race detection
 make coverage             # Run tests with coverage report
+make bench                # Run benchmarks for all packages
+make bench-rlnc           # Run RLNC encoder benchmarks
+make bench-rs             # Run Reed-Solomon encoder benchmarks
+make bench-field          # Run field arithmetic benchmarks
+make test-examples        # Test example applications
 make proto                # Generate protobuf files
 make proto-clean          # Clean protobuf generated files
-make example              # Build example application
-make example-linux        # Cross compile example for Linux
+make example              # Build all example applications
+make example-linux        # Cross compile examples for Linux
 make install-tools        # Install development tools
 make clean                # Clean build artifacts
 ```
@@ -73,10 +80,20 @@ cd pb && make clean        # Clean generated files
 
 ### Running Examples
 ```bash
-cd examples/simple
-go build
-./simple -l 8001          # Start listening node on port 8001
-./simple -c 127.0.0.1:8001 # Connect to listening node
+# Simple Network (basic P2P)
+cd examples/simple && go build
+./simple -l 8001          # Listening node
+./simple -c 127.0.0.1:8001 # Connecting node
+
+# RLNC Network (Random Linear Network Coding)
+cd examples/rlnc-network && go build
+./rlnc-network -l 8001 -id alice
+./rlnc-network -l 8002 -c 127.0.0.1:8001 -id bob
+
+# Reed-Solomon Network (Systematic MDS Codes)
+cd examples/rs-network && go build
+./rs-network -l 8001 -id alice
+./rs-network -l 8002 -c 127.0.0.1:8001 -id bob
 ```
 
 
@@ -139,6 +156,13 @@ The codebase includes a pluggable chunk verification system in `ec/encode/rlnc/v
 
 ### Connection Management
 The host layer handles peer connections through QUIC with automatic peer discovery via TLS certificate validation and peer ID derivation.
+
+### Transport Modes
+The host supports two QUIC transport modes:
+- **TransportDatagram**: Uses QUIC datagrams for unreliable, unordered message delivery (lower latency, no flow control)
+- **TransportStream**: Uses QUIC streams for reliable, ordered message delivery (higher latency, flow control, guaranteed delivery)
+
+Configure via `host.WithTransportMode(mode)` option when creating a host.
 
 ## Module Structure
 

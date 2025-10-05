@@ -25,6 +25,7 @@ cd ../..
 
 # Run simulations - automatically uses topology/topology-{NODE_COUNT}.json if available
 make floodsub NODE_COUNT=10 MSG_SIZE=64 MSG_COUNT=5
+make floodsub-streams NODE_COUNT=10 MSG_SIZE=64 MSG_COUNT=5  # FloodSub with QUIC streams
 make rlnc NODE_COUNT=10 MSG_SIZE=64 MSG_COUNT=5
 make rs NODE_COUNT=10 MSG_SIZE=64 MSG_COUNT=5
 
@@ -90,6 +91,14 @@ See [TOPOLOGY.md](TOPOLOGY.md) for detailed topology documentation.
 | `NODE_COUNT` | 10 | Number of nodes in simulation |
 | `MSG_SIZE` | 64 | Message size in bytes |
 | `MSG_COUNT` | 5 | Number of messages to publish |
+
+## Transport Modes
+
+All protocols support two QUIC transport modes:
+- **Datagrams** (default): Unreliable, unordered delivery with lower latency
+- **Streams**: Reliable, ordered delivery with flow control
+
+FloodSub includes both transport modes in CI testing. RLNC and Reed-Solomon currently use datagrams by default but can be configured to use streams via the `--use-streams` flag.
 
 ## Example: Complete Topology Simulation
 

@@ -29,6 +29,16 @@ const (
 	DefaultPort = 7001
 )
 
+// TransportMode defines how data is transmitted over QUIC connections
+type TransportMode int
+
+const (
+	// TransportDatagram uses QUIC datagrams for unreliable, unordered delivery
+	TransportDatagram TransportMode = iota
+	// TransportStream uses QUIC streams for reliable, ordered delivery
+	TransportStream
+)
+
 // HostOption configures a Host during construction
 type HostOption func(*Host) error
 
@@ -40,8 +50,9 @@ func NewHost(opts ...HostOption) (*Host, error) {
 		ctx:    ctx,
 		cancel: cancel,
 
-		endpoint:    net.UDPAddrFromAddrPort(netip.AddrPortFrom(netip.IPv4Unspecified(), DefaultPort)),
-		connections: make(map[peer.ID]quic.Connection),
+		endpoint:      net.UDPAddrFromAddrPort(netip.AddrPortFrom(netip.IPv4Unspecified(), DefaultPort)),
+		connections:   make(map[peer.ID]Connection),
+		transportMode: TransportDatagram, // Default to datagram mode for backward compatibility
 	}
 
 	// Apply configuration options
@@ -171,24 +182,130 @@ type Receiver interface {
 type Connection interface {
 	Sender
 	Receiver
+
+	// Close closes the underlying connection
+	Close() error
 }
 
-// quicConnection wraps a QUIC connection to implement Connection interface
-type quicConnection struct {
+// quicDatagramConnection wraps a QUIC connection using datagrams
+type quicDatagramConnection struct {
 	conn quic.Connection
 }
 
-func (qc *quicConnection) Send(buf []byte) error {
+func (qc *quicDatagramConnection) Send(buf []byte) error {
 	return qc.conn.SendDatagram(buf)
 }
-func (qc *quicConnection) Receive(ctx context.Context) ([]byte, error) {
+func (qc *quicDatagramConnection) Receive(ctx context.Context) ([]byte, error) {
 	return qc.conn.ReceiveDatagram(ctx)
 }
-func (qc *quicConnection) LocalAddr() net.Addr {
+func (qc *quicDatagramConnection) LocalAddr() net.Addr {
 	return qc.conn.LocalAddr()
 }
-func (qc *quicConnection) RemoteAddr() net.Addr {
+func (qc *quicDatagramConnection) RemoteAddr() net.Addr {
 	return qc.conn.RemoteAddr()
+}
+
+func (qc *quicDatagramConnection) Close() error {
+	return qc.conn.CloseWithError(0, "")
+}
+
+// quicStreamConnection wraps a QUIC connection using bidirectional streams
+type quicStreamConnection struct {
+	conn       quic.Connection
+	sendStream quic.Stream
+	recvStream quic.Stream
+	sendMutex  sync.Mutex
+	recvReady  chan struct{} // Closed when recvStream is available
+}
+
+func newQuicStreamConnection(conn quic.Connection) *quicStreamConnection {
+	sc := &quicStreamConnection{
+		conn:      conn,
+		recvReady: make(chan struct{}),
+	}
+	// Start accepting streams in the background
+	go sc.acceptStreams()
+	return sc
+}
+
+func (qc *quicStreamConnection) acceptStreams() {
+	// Accept the first incoming stream for receiving
+	stream, err := qc.conn.AcceptStream(context.Background())
+	if err != nil {
+		return
+	}
+	qc.recvStream = stream
+	close(qc.recvReady) // Signal that stream is ready
+}
+
+func (qc *quicStreamConnection) Send(buf []byte) error {
+	qc.sendMutex.Lock()
+	defer qc.sendMutex.Unlock()
+
+	// Open stream on first write if not already open
+	if qc.sendStream == nil {
+		stream, err := qc.conn.OpenStreamSync(context.Background())
+		if err != nil {
+			return err
+		}
+		qc.sendStream = stream
+	}
+
+	// Write length prefix (4 bytes, big-endian)
+	length := uint32(len(buf))
+	lengthBuf := []byte{
+		byte(length >> 24),
+		byte(length >> 16),
+		byte(length >> 8),
+		byte(length),
+	}
+
+	if _, err := qc.sendStream.Write(lengthBuf); err != nil {
+		return err
+	}
+
+	// Write message data
+	_, err := qc.sendStream.Write(buf)
+	return err
+}
+
+func (qc *quicStreamConnection) Receive(ctx context.Context) ([]byte, error) {
+	// Wait for receive stream to be ready
+	select {
+	case <-qc.recvReady:
+		// Stream is ready
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+
+	// Read length prefix (4 bytes)
+	lengthBuf := make([]byte, 4)
+	if _, err := qc.recvStream.Read(lengthBuf); err != nil {
+		return nil, err
+	}
+
+	length := uint32(lengthBuf[0])<<24 | uint32(lengthBuf[1])<<16 |
+		uint32(lengthBuf[2])<<8 | uint32(lengthBuf[3])
+
+	// Read message data
+	buf := make([]byte, length)
+	if _, err := qc.recvStream.Read(buf); err != nil {
+		return nil, err
+	}
+
+	return buf, nil
+}
+
+func (qc *quicStreamConnection) LocalAddr() net.Addr {
+	return qc.conn.LocalAddr()
+}
+
+func (qc *quicStreamConnection) RemoteAddr() net.Addr {
+	return qc.conn.RemoteAddr()
+}
+
+func (qc *quicStreamConnection) Close() error {
+	return qc.conn.CloseWithError(0, "")
 }
 
 // AddPeerHandler is called when a new peer connects
@@ -207,7 +324,20 @@ func (h *Host) SetPeerHandlers(addHandler AddPeerHandler, removeHandler RemovePe
 
 	// Notify about existing connections
 	for peerID, conn := range h.connections {
-		h.addHandler(peerID, &quicConnection{conn: conn})
+		h.addHandler(peerID, conn)
+	}
+}
+
+// newConnection creates a Connection wrapper based on the configured transport mode
+func (h *Host) newConnection(conn quic.Connection) Connection {
+	switch h.transportMode {
+	case TransportDatagram:
+		return &quicDatagramConnection{conn: conn}
+	case TransportStream:
+		return newQuicStreamConnection(conn)
+	default:
+		// This should never happen due to validation in WithTransportMode
+		panic(fmt.Sprintf("unsupported transport mode: %d", h.transportMode))
 	}
 }
 
@@ -229,10 +359,11 @@ func (h *Host) handleConnection(conn quic.Connection) (peer.ID, error) {
 		return "", fmt.Errorf("already connected to peer %s", peerID)
 	}
 
-	// Register new connection
-	h.connections[peerID] = conn
+	// Create and register new connection
+	wrappedConn := h.newConnection(conn)
+	h.connections[peerID] = wrappedConn
 	if h.addHandler != nil {
-		h.addHandler(peerID, &quicConnection{conn: conn})
+		h.addHandler(peerID, wrappedConn)
 	}
 
 	h.waitGroup.Add(1)
@@ -279,6 +410,17 @@ func (h *Host) acceptLoop() {
 func WithAddrPort(ep netip.AddrPort) HostOption {
 	return func(h *Host) error {
 		h.endpoint = net.UDPAddrFromAddrPort(ep)
+		return nil
+	}
+}
+
+// WithTransportMode sets the QUIC transport mode (datagram or stream)
+func WithTransportMode(mode TransportMode) HostOption {
+	return func(h *Host) error {
+		if mode != TransportDatagram && mode != TransportStream {
+			return fmt.Errorf("unsupported transport mode: %d", mode)
+		}
+		h.transportMode = mode
 		return nil
 	}
 }
@@ -337,9 +479,10 @@ type Host struct {
 
 	mutex sync.Mutex // Protects connections map
 
-	connections map[peer.ID]quic.Connection // Active peer connections
+	connections map[peer.ID]Connection // Active wrapped connections
 
-	shadowMode bool // Enable Shadow simulator compatibility mode
+	shadowMode    bool          // Enable Shadow simulator compatibility mode
+	transportMode TransportMode // How data is transmitted (datagram or stream)
 
 	certificate *tls.Certificate  // Self-signed TLS certificate
 	endpoint    *net.UDPAddr      // Local UDP endpoint

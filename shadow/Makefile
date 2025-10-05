@@ -1,6 +1,6 @@
 # Master Makefile for eth-ec-broadcast Shadow simulations
 
-.PHONY: all help clean floodsub rlnc rs test-all clean-all all-topologies
+.PHONY: all help clean floodsub floodsub-streams rlnc rs test-all clean-all all-topologies
 
 # Default parameters
 NODE_COUNT ?= 10
@@ -13,6 +13,11 @@ PROGRESS ?= false
 floodsub:
 	@echo "Running FloodSub simulation..."
 	cd floodsub && make all NODE_COUNT=$(NODE_COUNT) MSG_SIZE=$(MSG_SIZE) MSG_COUNT=$(MSG_COUNT) PROGRESS=$(PROGRESS)
+
+# Run floodsub simulation with QUIC streams
+floodsub-streams:
+	@echo "Running FloodSub simulation with QUIC streams..."
+	cd floodsub && make all-streams NODE_COUNT=$(NODE_COUNT) MSG_SIZE=$(MSG_SIZE) MSG_COUNT=$(MSG_COUNT) PROGRESS=$(PROGRESS)
 
 # Run RLNC simulation
 rlnc:
@@ -39,7 +44,7 @@ clean-all:
 	cd rs && make clean
 
 # Run all protocols (default)
-all: floodsub rlnc rs
+all: floodsub floodsub-streams rlnc rs
 
 # Clean (alias for clean-all)
 clean: clean-all
@@ -114,16 +119,17 @@ help:
 	@echo "eth-ec-broadcast Shadow Simulation Suite"
 	@echo "======================================="
 	@echo ""
-	@echo "This master Makefile coordinates simulations for all three protocols:"
+	@echo "This master Makefile coordinates simulations for all protocols:"
 	@echo "- FloodSub: Basic message flooding protocol"
 	@echo "- RLNC: Random Linear Network Coding with erasure coding"
 	@echo "- Reed-Solomon: Reed-Solomon erasure coding"
 	@echo ""
 	@echo "Targets:"
-	@echo "  floodsub        - Run FloodSub simulation"
+	@echo "  floodsub        - Run FloodSub simulation (QUIC datagrams)"
+	@echo "  floodsub-streams- Run FloodSub simulation (QUIC streams)"
 	@echo "  rlnc            - Run RLNC simulation"
 	@echo "  rs              - Run Reed-Solomon simulation"
-	@echo "  all             - Run all three protocol simulations"
+	@echo "  all             - Run all protocol simulations (includes both FloodSub modes)"
 	@echo "  test-all        - Test results from all protocols"
 	@echo "  all-topologies  - Test all topology types across protocols"
 	@echo "  clean-all       - Clean all protocol directories"
@@ -140,6 +146,7 @@ help:
 	@echo "Examples:"
 	@echo "  make all                                    # Run all protocols with defaults"
 	@echo "  make floodsub NODE_COUNT=20 MSG_SIZE=128   # Run FloodSub with custom parameters"
+	@echo "  make floodsub-streams NODE_COUNT=10        # Run FloodSub with QUIC streams"
 	@echo "  make rlnc NODE_COUNT=15                    # Run RLNC with 15 nodes"
 	@echo "  make rlnc MSG_SIZE=256 NUM_CHUNKS=32       # Run RLNC with 32 chunks"
 	@echo "  make rs MSG_SIZE=64 NUM_CHUNKS=8           # Run Reed-Solomon with 8 chunks"
