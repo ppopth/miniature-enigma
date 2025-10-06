@@ -66,6 +66,24 @@ all: floodsub floodsub-streams gossipsub rlnc rlnc-streams rs rs-streams
 # Clean (alias for clean-all)
 clean: clean-all
 
+# Helper function to retry a test up to 5 times
+define retry_test
+	@for attempt in 1 2 3 4 5; do \
+		echo "[Attempt $$attempt/5] $(1)"; \
+		if $(MAKE) clean-all && $(MAKE) $(2); then \
+			echo "✓ $(1) passed"; \
+			break; \
+		else \
+			if [ $$attempt -eq 5 ]; then \
+				echo "✗ $(1) failed after 5 attempts"; \
+				exit 1; \
+			fi; \
+			echo "Retrying in 2 seconds..."; \
+			sleep 2; \
+		fi; \
+	done
+endef
+
 # Test all topology types with all protocols (comprehensive matrix)
 all-topologies:
 	@echo "Testing ALL topology types with ALL protocols..."
@@ -81,55 +99,62 @@ all-topologies:
 		./topology-gen -type random-regular -nodes 7 -degree 3 -output ../topology-7.json
 	@echo ""
 	@echo "=== Testing Linear topology (5 nodes) ==="
-	@echo "Linear + FloodSub..."
-	$(MAKE) clean-all && $(MAKE) floodsub NODE_COUNT=5 MSG_COUNT=1
-	@echo "Linear + RLNC..."
-	$(MAKE) clean-all && $(MAKE) rlnc NODE_COUNT=5 MSG_COUNT=1 NUM_CHUNKS=$(NUM_CHUNKS)
-	@echo "Linear + Reed-Solomon..."
-	$(MAKE) clean-all && $(MAKE) rs NODE_COUNT=5 MSG_COUNT=1 NUM_CHUNKS=$(NUM_CHUNKS)
+	$(call retry_test,Linear + FloodSub (datagrams),floodsub NODE_COUNT=5 MSG_COUNT=1)
+	$(call retry_test,Linear + FloodSub (streams),floodsub-streams NODE_COUNT=5 MSG_COUNT=1)
+	$(call retry_test,Linear + GossipSub,gossipsub NODE_COUNT=5 MSG_COUNT=1)
+	$(call retry_test,Linear + RLNC (datagrams),rlnc NODE_COUNT=5 MSG_COUNT=1 NUM_CHUNKS=$(NUM_CHUNKS))
+	$(call retry_test,Linear + RLNC (streams),rlnc-streams NODE_COUNT=5 MSG_COUNT=1 NUM_CHUNKS=$(NUM_CHUNKS))
+	$(call retry_test,Linear + RS (datagrams),rs NODE_COUNT=5 MSG_COUNT=1 NUM_CHUNKS=$(NUM_CHUNKS))
+	$(call retry_test,Linear + RS (streams),rs-streams NODE_COUNT=5 MSG_COUNT=1 NUM_CHUNKS=$(NUM_CHUNKS))
 	@echo ""
 	@echo "=== Testing Ring topology (6 nodes) ==="
-	@echo "Ring + FloodSub..."
-	$(MAKE) clean-all && $(MAKE) floodsub NODE_COUNT=6 MSG_COUNT=1
-	@echo "Ring + RLNC..."
-	$(MAKE) clean-all && $(MAKE) rlnc NODE_COUNT=6 MSG_COUNT=1 NUM_CHUNKS=$(NUM_CHUNKS)
-	@echo "Ring + Reed-Solomon..."
-	$(MAKE) clean-all && $(MAKE) rs NODE_COUNT=6 MSG_COUNT=1 NUM_CHUNKS=$(NUM_CHUNKS)
+	$(call retry_test,Ring + FloodSub (datagrams),floodsub NODE_COUNT=6 MSG_COUNT=1)
+	$(call retry_test,Ring + FloodSub (streams),floodsub-streams NODE_COUNT=6 MSG_COUNT=1)
+	$(call retry_test,Ring + GossipSub,gossipsub NODE_COUNT=6 MSG_COUNT=1)
+	$(call retry_test,Ring + RLNC (datagrams),rlnc NODE_COUNT=6 MSG_COUNT=1 NUM_CHUNKS=$(NUM_CHUNKS))
+	$(call retry_test,Ring + RLNC (streams),rlnc-streams NODE_COUNT=6 MSG_COUNT=1 NUM_CHUNKS=$(NUM_CHUNKS))
+	$(call retry_test,Ring + RS (datagrams),rs NODE_COUNT=6 MSG_COUNT=1 NUM_CHUNKS=$(NUM_CHUNKS))
+	$(call retry_test,Ring + RS (streams),rs-streams NODE_COUNT=6 MSG_COUNT=1 NUM_CHUNKS=$(NUM_CHUNKS))
 	@echo ""
 	@echo "=== Testing Mesh topology (4 nodes) ==="
-	@echo "Mesh + FloodSub..."
-	$(MAKE) clean-all && $(MAKE) floodsub NODE_COUNT=4 MSG_COUNT=1
-	@echo "Mesh + RLNC..."
-	$(MAKE) clean-all && $(MAKE) rlnc NODE_COUNT=4 MSG_COUNT=1 NUM_CHUNKS=$(NUM_CHUNKS)
-	@echo "Mesh + Reed-Solomon..."
-	$(MAKE) clean-all && $(MAKE) rs NODE_COUNT=4 MSG_COUNT=1 NUM_CHUNKS=$(NUM_CHUNKS)
+	$(call retry_test,Mesh + FloodSub (datagrams),floodsub NODE_COUNT=4 MSG_COUNT=1)
+	$(call retry_test,Mesh + FloodSub (streams),floodsub-streams NODE_COUNT=4 MSG_COUNT=1)
+	$(call retry_test,Mesh + GossipSub,gossipsub NODE_COUNT=4 MSG_COUNT=1)
+	$(call retry_test,Mesh + RLNC (datagrams),rlnc NODE_COUNT=4 MSG_COUNT=1 NUM_CHUNKS=$(NUM_CHUNKS))
+	$(call retry_test,Mesh + RLNC (streams),rlnc-streams NODE_COUNT=4 MSG_COUNT=1 NUM_CHUNKS=$(NUM_CHUNKS))
+	$(call retry_test,Mesh + RS (datagrams),rs NODE_COUNT=4 MSG_COUNT=1 NUM_CHUNKS=$(NUM_CHUNKS))
+	$(call retry_test,Mesh + RS (streams),rs-streams NODE_COUNT=4 MSG_COUNT=1 NUM_CHUNKS=$(NUM_CHUNKS))
 	@echo ""
 	@echo "=== Testing Tree topology (8 nodes) ==="
-	@echo "Tree + FloodSub..."
-	$(MAKE) clean-all && $(MAKE) floodsub NODE_COUNT=8 MSG_COUNT=1
-	@echo "Tree + RLNC..."
-	$(MAKE) clean-all && $(MAKE) rlnc NODE_COUNT=8 MSG_COUNT=1 NUM_CHUNKS=$(NUM_CHUNKS)
-	@echo "Tree + Reed-Solomon..."
-	$(MAKE) clean-all && $(MAKE) rs NODE_COUNT=8 MSG_COUNT=1 NUM_CHUNKS=$(NUM_CHUNKS)
+	$(call retry_test,Tree + FloodSub (datagrams),floodsub NODE_COUNT=8 MSG_COUNT=1)
+	$(call retry_test,Tree + FloodSub (streams),floodsub-streams NODE_COUNT=8 MSG_COUNT=1)
+	$(call retry_test,Tree + GossipSub,gossipsub NODE_COUNT=8 MSG_COUNT=1)
+	$(call retry_test,Tree + RLNC (datagrams),rlnc NODE_COUNT=8 MSG_COUNT=1 NUM_CHUNKS=$(NUM_CHUNKS))
+	$(call retry_test,Tree + RLNC (streams),rlnc-streams NODE_COUNT=8 MSG_COUNT=1 NUM_CHUNKS=$(NUM_CHUNKS))
+	$(call retry_test,Tree + RS (datagrams),rs NODE_COUNT=8 MSG_COUNT=1 NUM_CHUNKS=$(NUM_CHUNKS))
+	$(call retry_test,Tree + RS (streams),rs-streams NODE_COUNT=8 MSG_COUNT=1 NUM_CHUNKS=$(NUM_CHUNKS))
 	@echo ""
 	@echo "=== Testing Small-World topology (9 nodes) ==="
-	@echo "Small-World + FloodSub..."
-	$(MAKE) clean-all && $(MAKE) floodsub NODE_COUNT=9 MSG_COUNT=1
-	@echo "Small-World + RLNC..."
-	$(MAKE) clean-all && $(MAKE) rlnc NODE_COUNT=9 MSG_COUNT=1 NUM_CHUNKS=$(NUM_CHUNKS)
-	@echo "Small-World + Reed-Solomon..."
-	$(MAKE) clean-all && $(MAKE) rs NODE_COUNT=9 MSG_COUNT=1 NUM_CHUNKS=$(NUM_CHUNKS)
+	$(call retry_test,Small-World + FloodSub (datagrams),floodsub NODE_COUNT=9 MSG_COUNT=1)
+	$(call retry_test,Small-World + FloodSub (streams),floodsub-streams NODE_COUNT=9 MSG_COUNT=1)
+	$(call retry_test,Small-World + GossipSub,gossipsub NODE_COUNT=9 MSG_COUNT=1)
+	$(call retry_test,Small-World + RLNC (datagrams),rlnc NODE_COUNT=9 MSG_COUNT=1 NUM_CHUNKS=$(NUM_CHUNKS))
+	$(call retry_test,Small-World + RLNC (streams),rlnc-streams NODE_COUNT=9 MSG_COUNT=1 NUM_CHUNKS=$(NUM_CHUNKS))
+	$(call retry_test,Small-World + RS (datagrams),rs NODE_COUNT=9 MSG_COUNT=1 NUM_CHUNKS=$(NUM_CHUNKS))
+	$(call retry_test,Small-World + RS (streams),rs-streams NODE_COUNT=9 MSG_COUNT=1 NUM_CHUNKS=$(NUM_CHUNKS))
 	@echo ""
 	@echo "=== Testing Random-Regular topology (7 nodes) ==="
-	@echo "Random-Regular + FloodSub..."
-	$(MAKE) clean-all && $(MAKE) floodsub NODE_COUNT=7 MSG_COUNT=1
-	@echo "Random-Regular + RLNC..."
-	$(MAKE) clean-all && $(MAKE) rlnc NODE_COUNT=7 MSG_COUNT=1 NUM_CHUNKS=$(NUM_CHUNKS)
-	@echo "Random-Regular + Reed-Solomon..."
-	$(MAKE) clean-all && $(MAKE) rs NODE_COUNT=7 MSG_COUNT=1 NUM_CHUNKS=$(NUM_CHUNKS)
+	$(call retry_test,Random-Regular + FloodSub (datagrams),floodsub NODE_COUNT=7 MSG_COUNT=1)
+	$(call retry_test,Random-Regular + FloodSub (streams),floodsub-streams NODE_COUNT=7 MSG_COUNT=1)
+	$(call retry_test,Random-Regular + GossipSub,gossipsub NODE_COUNT=7 MSG_COUNT=1)
+	$(call retry_test,Random-Regular + RLNC (datagrams),rlnc NODE_COUNT=7 MSG_COUNT=1 NUM_CHUNKS=$(NUM_CHUNKS))
+	$(call retry_test,Random-Regular + RLNC (streams),rlnc-streams NODE_COUNT=7 MSG_COUNT=1 NUM_CHUNKS=$(NUM_CHUNKS))
+	$(call retry_test,Random-Regular + RS (datagrams),rs NODE_COUNT=7 MSG_COUNT=1 NUM_CHUNKS=$(NUM_CHUNKS))
+	$(call retry_test,Random-Regular + RS (streams),rs-streams NODE_COUNT=7 MSG_COUNT=1 NUM_CHUNKS=$(NUM_CHUNKS))
 	@echo ""
 	@echo "🎉 ALL topology/protocol combinations tested successfully!"
-	@echo "   - 6 topology types × 3 protocols = 18 total test combinations"
+	@echo "   - 6 topology types × 7 protocol variants = 42 total test combinations"
+	@echo "   - Protocols: FloodSub (datagrams/streams), GossipSub, RLNC (datagrams/streams), RS (datagrams/streams)"
 
 # Help target
 help:

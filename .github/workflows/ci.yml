@@ -108,23 +108,8 @@ jobs:
     - name: Run Shadow simulation tests
       run: |
         cd shadow
-        echo "Testing FloodSub protocol..."
-        make floodsub NODE_COUNT=5 MSG_COUNT=3
-        echo "Testing FloodSub protocol with QUIC streams..."
-        make floodsub-streams NODE_COUNT=5 MSG_COUNT=3
-        echo "Testing GossipSub protocol (libp2p)..."
-        make gossipsub NODE_COUNT=5 MSG_COUNT=3
-        echo "Testing RLNC protocol..."
-        make rlnc NODE_COUNT=5 MSG_COUNT=3
-        echo "Testing RLNC protocol with QUIC streams..."
-        make rlnc-streams NODE_COUNT=5 MSG_COUNT=3
-        echo "Testing Reed-Solomon protocol..."
-        make rs NODE_COUNT=5 MSG_COUNT=3
-        echo "Testing Reed-Solomon protocol with QUIC streams..."
-        make rs-streams NODE_COUNT=5 MSG_COUNT=3
-        echo "Testing all topology types with all protocols..."
         make all-topologies
-      timeout-minutes: 30
+      timeout-minutes: 60
 
     - name: Upload Shadow logs on failure
       if: failure()

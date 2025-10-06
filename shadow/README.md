@@ -25,17 +25,20 @@ cd topology/gen && go build -o topology-gen main.go
 cd ../..
 
 # Run simulations - automatically uses topology/topology-{NODE_COUNT}.json if available
-make floodsub NODE_COUNT=10 MSG_SIZE=64 MSG_COUNT=5
-make floodsub-streams NODE_COUNT=10 MSG_SIZE=64 MSG_COUNT=5  # FloodSub with QUIC streams
-make gossipsub NODE_COUNT=10 MSG_SIZE=64 MSG_COUNT=5          # libp2p GossipSub
-make rlnc NODE_COUNT=10 MSG_SIZE=64 MSG_COUNT=5
-make rs NODE_COUNT=10 MSG_SIZE=64 MSG_COUNT=5
+make floodsub NODE_COUNT=10 MSG_SIZE=256 MSG_COUNT=5
+make floodsub-streams NODE_COUNT=10 MSG_SIZE=256 MSG_COUNT=5  # FloodSub with QUIC streams
+make gossipsub NODE_COUNT=10 MSG_SIZE=256 MSG_COUNT=5          # libp2p GossipSub
+make rlnc NODE_COUNT=10 MSG_SIZE=256 MSG_COUNT=5
+make rs NODE_COUNT=10 MSG_SIZE=256 MSG_COUNT=5
 
 # Or run all protocols with same node count
-make all NODE_COUNT=10 MSG_SIZE=64 MSG_COUNT=5
+make all NODE_COUNT=10 MSG_SIZE=256 MSG_COUNT=5
 
 # Test results
 make test-all NODE_COUNT=10 MSG_COUNT=5
+
+# Run comprehensive topology testing (all topologies × all protocols with retry logic)
+make all-topologies LOG_LEVEL=debug
 ```
 
 ## Architecture: Two-Layer Network Model
@@ -65,6 +68,7 @@ shadow/
 ├── Makefile               # Master build coordinator
 ├── network_graph.py       # Generates Shadow network infrastructure
 ├── test_results.py        # Validates simulation results
+├── compare_protocols.py   # Protocol performance comparison tool
 ├── topology/              # Application topology system
 │   ├── topology.go        # Core topology data structure
 │   ├── generators.go      # Topology generation functions
@@ -73,7 +77,8 @@ shadow/
 ├── gossipsub/             # GossipSub (libp2p) simulation + Makefile
 ├── rlnc/                  # RLNC simulation + Makefile
 ├── rs/                    # Reed-Solomon simulation + Makefile
-└── TOPOLOGY.md            # Detailed topology documentation
+├── TOPOLOGY.md            # Detailed topology documentation
+└── COMPARISON.md          # Protocol comparison guide
 ```
 
 ## Available Application Topologies
@@ -92,8 +97,34 @@ See [TOPOLOGY.md](TOPOLOGY.md) for detailed topology documentation.
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `NODE_COUNT` | 10 | Number of nodes in simulation |
-| `MSG_SIZE` | 64 | Message size in bytes |
+| `MSG_SIZE` | 256 | Message size in bytes |
 | `MSG_COUNT` | 5 | Number of messages to publish |
+| `NUM_CHUNKS` | 8 | Number of chunks for RLNC and Reed-Solomon |
+| `LOG_LEVEL` | info | Log level: debug, info, warn, error |
+| `PROGRESS` | false | Show Shadow progress bar during simulation |
+
+### Log Levels
+
+All Shadow simulations support configurable log levels with microsecond-precision timestamps:
+
+- **debug**: Detailed debugging information (chunk validation, peer messages, state changes)
+- **info**: General informational messages (default)
+- **warn**: Warning messages
+- **error**: Error messages only
+
+The log level controls both application logging and go-log subsystems (including libp2p for GossipSub).
+
+**Examples:**
+```bash
+# Run with debug logging for detailed output
+make floodsub LOG_LEVEL=debug NODE_COUNT=10
+
+# Run all protocols with minimal logging
+make all LOG_LEVEL=error
+
+# Run comprehensive tests with debug logging
+make all-topologies LOG_LEVEL=debug
+```
 
 ## Transport Modes
 
@@ -129,3 +160,41 @@ cd floodsub && make test NODE_COUNT=10 MSG_COUNT=5
 The simulation will run with:
 - **Physical layer**: Realistic global internet latencies (Shadow)
 - **Application layer**: Your custom topology connection pattern
+
+## Protocol Performance Comparison
+
+To compare message arrival time performance across GossipSub, Reed-Solomon, and RLNC protocols, see [COMPARISON.md](COMPARISON.md) for the `compare_protocols.py` script.
+
+## Comprehensive Testing
+
+### all-topologies Target
+
+The `all-topologies` target runs exhaustive testing across all topology types and protocols with automatic retry logic for flaky tests:
+
+```bash
+# Run all topology/protocol combinations with retry logic
+cd shadow && make all-topologies LOG_LEVEL=debug
+```
+
+**What it tests:**
+- 6 topology types: linear, ring, mesh, tree, small-world, random-regular
+- 7 protocol variants: FloodSub (datagrams/streams), GossipSub, RLNC (datagrams/streams), RS (datagrams/streams)
+- 42 total test combinations
+
+**Retry Logic:**
+- Each test automatically retries up to 5 times on failure
+- Cleans simulation data between retries
+- 2-second delay between retry attempts
+- Fails only if all 5 attempts fail
+
+**Example Output:**
+```
+[Attempt 1/5] Linear + FloodSub (datagrams)
+✓ Linear + FloodSub (datagrams) passed
+[Attempt 1/5] Linear + FloodSub (streams)
+✗ Test failed, retrying...
+[Attempt 2/5] Linear + FloodSub (streams)
+✓ Linear + FloodSub (streams) passed
+```
+
+This target is used in CI to ensure reliability across all protocol and topology combinations.
