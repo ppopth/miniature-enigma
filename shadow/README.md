@@ -104,12 +104,12 @@ These protocols support two QUIC transport modes:
 
 FloodSub includes both transport modes in CI testing. RLNC and Reed-Solomon currently use datagrams by default but can be configured to use streams via the `--use-streams` flag.
 
-### GossipSub (libp2p)
-GossipSub uses libp2p's standard TCP transport with multiplexed streams, as defined by the libp2p specification. This provides:
-- Reliable, ordered delivery
-- Stream multiplexing
-- Built-in backpressure and flow control
-- Production-tested transport layer
+### libp2p Protocol (GossipSub)
+GossipSub is a separate implementation using go-libp2p-pubsub with standard TCP transport:
+- Uses libp2p's TCP with multiplexed streams (not the custom QUIC host)
+- Reliable, ordered delivery with built-in flow control
+- Production-tested libp2p transport layer
+- Run with: `make gossipsub`
 
 ## Example: Complete Topology Simulation
 

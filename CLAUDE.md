@@ -11,7 +11,7 @@ This is a Go-based peer-to-peer (P2P) broadcast system focused on erasure coding
   - **RLNC (Random Linear Network Coding)**: Uses linear combinations over finite fields for efficient and resilient broadcast
   - **Reed-Solomon**: Systematic MDS codes for efficient erasure coding with predictable chunk indices
 
-The networking layer supports both QUIC datagrams (unreliable, unordered) and QUIC streams (reliable, ordered) for flexible transport options.
+The networking layer supports both QUIC datagrams (unreliable, unordered) and QUIC streams (reliable, ordered) for flexible transport options. All protocols (FloodSub, RLNC, Reed-Solomon) can use either transport mode.
 
 ## Architecture
 
@@ -164,6 +164,12 @@ The host supports two QUIC transport modes:
 - **TransportStream**: Uses QUIC streams for reliable, ordered message delivery (higher latency, flow control, guaranteed delivery)
 
 Configure via `host.WithTransportMode(mode)` option when creating a host.
+
+All Shadow simulations support both transport modes:
+- **FloodSub**: `make floodsub` (datagrams), `make floodsub-streams` (streams)
+- **RLNC**: `make rlnc` (datagrams), `make rlnc-streams` (streams)
+- **Reed-Solomon**: `make rs` (datagrams), `make rs-streams` (streams)
+- **GossipSub**: Uses libp2p's TCP transport (separate implementation, not configurable)
 
 ## Module Structure
 

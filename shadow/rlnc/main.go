@@ -26,6 +26,7 @@ func main() {
 		msgSize      = flag.Int("msg-size", 32, "Size of each message in bytes")
 		numChunks    = flag.Int("num-chunks", 4, "Number of chunks to divide each message into")
 		topologyFile = flag.String("topology-file", "", "Path to topology JSON file (if not specified, uses linear topology)")
+		useStreams   = flag.Bool("use-streams", false, "Use QUIC streams instead of datagrams")
 	)
 	flag.Parse()
 
@@ -63,16 +64,26 @@ func main() {
 	// Create host with deterministic port based on node ID
 	// Enable Shadow compatibility mode
 	hostPort := uint16(8000 + *nodeID)
+
+	// Configure transport mode
+	transportMode := host.TransportDatagram
+	transportName := "datagram"
+	if *useStreams {
+		transportMode = host.TransportStream
+		transportName = "stream"
+	}
+
 	h, err := host.NewHost(
 		host.WithAddrPort(netip.AddrPortFrom(netip.IPv4Unspecified(), hostPort)),
 		host.WithShadowMode(),
+		host.WithTransportMode(transportMode),
 	)
 	if err != nil {
 		log.Fatalf("Failed to create host: %v", err)
 	}
 	defer h.Close()
 
-	log.Printf("Host created with ID: %s, listening on port: %d (Shadow mode)", h.ID(), hostPort)
+	log.Printf("Host created with ID: %s, listening on port: %d (Shadow mode, transport: %s)", h.ID(), hostPort, transportName)
 
 	// Create PubSub instance
 	ps, err := pubsub.NewPubSub(h)

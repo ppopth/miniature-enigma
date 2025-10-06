@@ -1,6 +1,6 @@
 # Master Makefile for eth-ec-broadcast Shadow simulations
 
-.PHONY: all help clean floodsub floodsub-streams gossipsub rlnc rs test-all clean-all all-topologies
+.PHONY: all help clean floodsub floodsub-streams gossipsub rlnc rlnc-streams rs rs-streams test-all clean-all all-topologies
 
 # Default parameters
 NODE_COUNT ?= 10
@@ -29,10 +29,20 @@ rlnc:
 	@echo "Running RLNC simulation..."
 	cd rlnc && make all NODE_COUNT=$(NODE_COUNT) MSG_SIZE=$(MSG_SIZE) MSG_COUNT=$(MSG_COUNT) NUM_CHUNKS=$(NUM_CHUNKS) PROGRESS=$(PROGRESS)
 
+# Run RLNC simulation with QUIC streams
+rlnc-streams:
+	@echo "Running RLNC simulation with QUIC streams..."
+	cd rlnc && make all-streams NODE_COUNT=$(NODE_COUNT) MSG_SIZE=$(MSG_SIZE) MSG_COUNT=$(MSG_COUNT) NUM_CHUNKS=$(NUM_CHUNKS) PROGRESS=$(PROGRESS)
+
 # Run Reed-Solomon simulation
 rs:
 	@echo "Running Reed-Solomon simulation..."
 	cd rs && make all NODE_COUNT=$(NODE_COUNT) MSG_SIZE=$(MSG_SIZE) MSG_COUNT=$(MSG_COUNT) NUM_CHUNKS=$(NUM_CHUNKS) PROGRESS=$(PROGRESS)
+
+# Run Reed-Solomon simulation with QUIC streams
+rs-streams:
+	@echo "Running Reed-Solomon simulation with QUIC streams..."
+	cd rs && make all-streams NODE_COUNT=$(NODE_COUNT) MSG_SIZE=$(MSG_SIZE) MSG_COUNT=$(MSG_COUNT) NUM_CHUNKS=$(NUM_CHUNKS) PROGRESS=$(PROGRESS)
 
 # Test all protocol results
 test-all:
@@ -51,7 +61,7 @@ clean-all:
 	cd rs && make clean
 
 # Run all protocols (default)
-all: floodsub floodsub-streams gossipsub rlnc rs
+all: floodsub floodsub-streams gossipsub rlnc rlnc-streams rs rs-streams
 
 # Clean (alias for clean-all)
 clean: clean-all
@@ -136,9 +146,11 @@ help:
 	@echo "  floodsub        - Run FloodSub simulation (QUIC datagrams)"
 	@echo "  floodsub-streams- Run FloodSub simulation (QUIC streams)"
 	@echo "  gossipsub       - Run GossipSub simulation (libp2p)"
-	@echo "  rlnc            - Run RLNC simulation"
-	@echo "  rs              - Run Reed-Solomon simulation"
-	@echo "  all             - Run all protocol simulations (includes both FloodSub modes)"
+	@echo "  rlnc            - Run RLNC simulation (QUIC datagrams)"
+	@echo "  rlnc-streams    - Run RLNC simulation (QUIC streams)"
+	@echo "  rs              - Run Reed-Solomon simulation (QUIC datagrams)"
+	@echo "  rs-streams      - Run Reed-Solomon simulation (QUIC streams)"
+	@echo "  all             - Run all protocol simulations with all transport modes"
 	@echo "  test-all        - Test results from all protocols"
 	@echo "  all-topologies  - Test all topology types across protocols"
 	@echo "  clean-all       - Clean all protocol directories"
@@ -158,6 +170,9 @@ help:
 	@echo "  make floodsub-streams NODE_COUNT=10        # Run FloodSub with QUIC streams"
 	@echo "  make gossipsub NODE_COUNT=10               # Run GossipSub with 10 nodes"
 	@echo "  make rlnc NODE_COUNT=15                    # Run RLNC with 15 nodes"
+	@echo "  make rlnc-streams NODE_COUNT=15            # Run RLNC with QUIC streams"
+	@echo "  make rs NODE_COUNT=10                      # Run Reed-Solomon with 10 nodes"
+	@echo "  make rs-streams NODE_COUNT=10              # Run Reed-Solomon with QUIC streams"
 	@echo "  make rlnc MSG_SIZE=256 NUM_CHUNKS=32       # Run RLNC with 32 chunks"
 	@echo "  make rs MSG_SIZE=64 NUM_CHUNKS=8           # Run Reed-Solomon with 8 chunks"
 	@echo "  make floodsub PROGRESS=true                # Run FloodSub with progress bar"

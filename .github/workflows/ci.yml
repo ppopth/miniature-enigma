@@ -116,8 +116,12 @@ jobs:
         make gossipsub NODE_COUNT=5 MSG_COUNT=3
         echo "Testing RLNC protocol..."
         make rlnc NODE_COUNT=5 MSG_COUNT=3
+        echo "Testing RLNC protocol with QUIC streams..."
+        make rlnc-streams NODE_COUNT=5 MSG_COUNT=3
         echo "Testing Reed-Solomon protocol..."
         make rs NODE_COUNT=5 MSG_COUNT=3
+        echo "Testing Reed-Solomon protocol with QUIC streams..."
+        make rs-streams NODE_COUNT=5 MSG_COUNT=3
         echo "Testing all topology types with all protocols..."
         make all-topologies
       timeout-minutes: 30
