@@ -112,6 +112,8 @@ jobs:
         make floodsub NODE_COUNT=5 MSG_COUNT=3
         echo "Testing FloodSub protocol with QUIC streams..."
         make floodsub-streams NODE_COUNT=5 MSG_COUNT=3
+        echo "Testing GossipSub protocol (libp2p)..."
+        make gossipsub NODE_COUNT=5 MSG_COUNT=3
         echo "Testing RLNC protocol..."
         make rlnc NODE_COUNT=5 MSG_COUNT=3
         echo "Testing Reed-Solomon protocol..."

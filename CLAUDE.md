@@ -126,6 +126,7 @@ The project includes a CI/CD pipeline with:
 - **Build validation**: Ensures all packages build correctly
 - **Code formatting**: Validates code formatting with `gofmt`
 - **Example testing**: Tests both RLNC and Reed-Solomon network examples for network functionality
+- **Shadow simulations**: Tests FloodSub, GossipSub, RLNC, and Reed-Solomon protocols under realistic network conditions
 
 ### Code Quality Tools
 - **Makefile**: Standardized development workflow commands

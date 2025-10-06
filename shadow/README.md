@@ -5,6 +5,7 @@ This directory contains Shadow network simulations for testing eth-ec-broadcast 
 ## Protocols
 
 - **FloodSub**: Basic message flooding protocol (baseline)
+- **GossipSub**: libp2p GossipSub protocol (go-libp2p-pubsub)
 - **RLNC**: Random Linear Network Coding erasure coding
 - **Reed-Solomon**: Reed-Solomon erasure coding
 
@@ -26,6 +27,7 @@ cd ../..
 # Run simulations - automatically uses topology/topology-{NODE_COUNT}.json if available
 make floodsub NODE_COUNT=10 MSG_SIZE=64 MSG_COUNT=5
 make floodsub-streams NODE_COUNT=10 MSG_SIZE=64 MSG_COUNT=5  # FloodSub with QUIC streams
+make gossipsub NODE_COUNT=10 MSG_SIZE=64 MSG_COUNT=5          # libp2p GossipSub
 make rlnc NODE_COUNT=10 MSG_SIZE=64 MSG_COUNT=5
 make rs NODE_COUNT=10 MSG_SIZE=64 MSG_COUNT=5
 
@@ -68,6 +70,7 @@ shadow/
 │   ├── generators.go      # Topology generation functions
 │   └── gen/               # Topology generator tool
 ├── floodsub/              # FloodSub simulation + Makefile
+├── gossipsub/             # GossipSub (libp2p) simulation + Makefile
 ├── rlnc/                  # RLNC simulation + Makefile
 ├── rs/                    # Reed-Solomon simulation + Makefile
 └── TOPOLOGY.md            # Detailed topology documentation
@@ -94,11 +97,19 @@ See [TOPOLOGY.md](TOPOLOGY.md) for detailed topology documentation.
 
 ## Transport Modes
 
-All protocols support two QUIC transport modes:
+### Custom Protocols (FloodSub, RLNC, Reed-Solomon)
+These protocols support two QUIC transport modes:
 - **Datagrams** (default): Unreliable, unordered delivery with lower latency
 - **Streams**: Reliable, ordered delivery with flow control
 
 FloodSub includes both transport modes in CI testing. RLNC and Reed-Solomon currently use datagrams by default but can be configured to use streams via the `--use-streams` flag.
+
+### GossipSub (libp2p)
+GossipSub uses libp2p's standard TCP transport with multiplexed streams, as defined by the libp2p specification. This provides:
+- Reliable, ordered delivery
+- Stream multiplexing
+- Built-in backpressure and flow control
+- Production-tested transport layer
 
 ## Example: Complete Topology Simulation
 
