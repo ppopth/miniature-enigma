@@ -74,6 +74,9 @@ jobs:
     - name: Install Python dependencies
       run: pip3 install networkx pyyaml
 
+    - name: Set up Rust
+      uses: dtolnay/rust-toolchain@1.89.0
+
     - name: Install Shadow simulator
       run: |
         # Install Shadow dependencies
