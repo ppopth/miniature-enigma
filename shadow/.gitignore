@@ -36,6 +36,10 @@ rs/shadow.data.*
 node-*-results.txt
 *.log
 
+# Protocol comparison outputs
+protocol_comparison_cdf.png
+*.png
+
 # Python cache
 __pycache__/
 *.pyc
