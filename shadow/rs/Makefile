@@ -8,6 +8,7 @@ MSG_SIZE ?= 64
 MSG_COUNT ?= 5
 NUM_CHUNKS ?= 8
 PROGRESS ?= false
+LOG_LEVEL ?= info
 
 # Check dependencies
 check-deps:
@@ -27,14 +28,14 @@ build: check-deps
 # Generate network graph and Shadow configuration
 generate-config: check-deps
 	@echo "Generating Shadow network configuration for $(NODE_COUNT) nodes (Reed-Solomon)..."
-	python3 ../network_graph.py $(NODE_COUNT) $(MSG_SIZE) $(MSG_COUNT) rs "-num-chunks $(NUM_CHUNKS)"
+	python3 ../network_graph.py $(NODE_COUNT) $(MSG_SIZE) $(MSG_COUNT) rs "-num-chunks $(NUM_CHUNKS) --log-level $(LOG_LEVEL)"
 	@test -f shadow-rs.yaml && test -f graph.gml || (echo "Config generation failed" && exit 1)
 	@echo "Configuration generated"
 
 # Generate network graph and Shadow configuration for streams
 generate-config-streams: check-deps
 	@echo "Generating Shadow network configuration for $(NODE_COUNT) nodes (Reed-Solomon with streams)..."
-	python3 ../network_graph.py $(NODE_COUNT) $(MSG_SIZE) $(MSG_COUNT) rs "-num-chunks $(NUM_CHUNKS) --use-streams"
+	python3 ../network_graph.py $(NODE_COUNT) $(MSG_SIZE) $(MSG_COUNT) rs "-num-chunks $(NUM_CHUNKS) --use-streams --log-level $(LOG_LEVEL)"
 	@test -f shadow-rs.yaml && test -f graph.gml || (echo "Config generation failed" && exit 1)
 	@echo "Configuration generated (with QUIC streams)"
 

@@ -8,41 +8,42 @@ MSG_SIZE ?= 64
 MSG_COUNT ?= 5
 NUM_CHUNKS ?= 8
 PROGRESS ?= false
+LOG_LEVEL ?= info
 
 # Run floodsub simulation
 floodsub:
 	@echo "Running FloodSub simulation..."
-	cd floodsub && make all NODE_COUNT=$(NODE_COUNT) MSG_SIZE=$(MSG_SIZE) MSG_COUNT=$(MSG_COUNT) PROGRESS=$(PROGRESS)
+	cd floodsub && make all NODE_COUNT=$(NODE_COUNT) MSG_SIZE=$(MSG_SIZE) MSG_COUNT=$(MSG_COUNT) PROGRESS=$(PROGRESS) LOG_LEVEL=$(LOG_LEVEL)
 
 # Run floodsub simulation with QUIC streams
 floodsub-streams:
 	@echo "Running FloodSub simulation with QUIC streams..."
-	cd floodsub && make all-streams NODE_COUNT=$(NODE_COUNT) MSG_SIZE=$(MSG_SIZE) MSG_COUNT=$(MSG_COUNT) PROGRESS=$(PROGRESS)
+	cd floodsub && make all-streams NODE_COUNT=$(NODE_COUNT) MSG_SIZE=$(MSG_SIZE) MSG_COUNT=$(MSG_COUNT) PROGRESS=$(PROGRESS) LOG_LEVEL=$(LOG_LEVEL)
 
 # Run gossipsub simulation
 gossipsub:
 	@echo "Running GossipSub simulation (libp2p)..."
-	cd gossipsub && make all NODE_COUNT=$(NODE_COUNT) MSG_SIZE=$(MSG_SIZE) MSG_COUNT=$(MSG_COUNT) PROGRESS=$(PROGRESS)
+	cd gossipsub && make all NODE_COUNT=$(NODE_COUNT) MSG_SIZE=$(MSG_SIZE) MSG_COUNT=$(MSG_COUNT) PROGRESS=$(PROGRESS) LOG_LEVEL=$(LOG_LEVEL)
 
 # Run RLNC simulation
 rlnc:
 	@echo "Running RLNC simulation..."
-	cd rlnc && make all NODE_COUNT=$(NODE_COUNT) MSG_SIZE=$(MSG_SIZE) MSG_COUNT=$(MSG_COUNT) NUM_CHUNKS=$(NUM_CHUNKS) PROGRESS=$(PROGRESS)
+	cd rlnc && make all NODE_COUNT=$(NODE_COUNT) MSG_SIZE=$(MSG_SIZE) MSG_COUNT=$(MSG_COUNT) NUM_CHUNKS=$(NUM_CHUNKS) PROGRESS=$(PROGRESS) LOG_LEVEL=$(LOG_LEVEL)
 
 # Run RLNC simulation with QUIC streams
 rlnc-streams:
 	@echo "Running RLNC simulation with QUIC streams..."
-	cd rlnc && make all-streams NODE_COUNT=$(NODE_COUNT) MSG_SIZE=$(MSG_SIZE) MSG_COUNT=$(MSG_COUNT) NUM_CHUNKS=$(NUM_CHUNKS) PROGRESS=$(PROGRESS)
+	cd rlnc && make all-streams NODE_COUNT=$(NODE_COUNT) MSG_SIZE=$(MSG_SIZE) MSG_COUNT=$(MSG_COUNT) NUM_CHUNKS=$(NUM_CHUNKS) PROGRESS=$(PROGRESS) LOG_LEVEL=$(LOG_LEVEL)
 
 # Run Reed-Solomon simulation
 rs:
 	@echo "Running Reed-Solomon simulation..."
-	cd rs && make all NODE_COUNT=$(NODE_COUNT) MSG_SIZE=$(MSG_SIZE) MSG_COUNT=$(MSG_COUNT) NUM_CHUNKS=$(NUM_CHUNKS) PROGRESS=$(PROGRESS)
+	cd rs && make all NODE_COUNT=$(NODE_COUNT) MSG_SIZE=$(MSG_SIZE) MSG_COUNT=$(MSG_COUNT) NUM_CHUNKS=$(NUM_CHUNKS) PROGRESS=$(PROGRESS) LOG_LEVEL=$(LOG_LEVEL)
 
 # Run Reed-Solomon simulation with QUIC streams
 rs-streams:
 	@echo "Running Reed-Solomon simulation with QUIC streams..."
-	cd rs && make all-streams NODE_COUNT=$(NODE_COUNT) MSG_SIZE=$(MSG_SIZE) MSG_COUNT=$(MSG_COUNT) NUM_CHUNKS=$(NUM_CHUNKS) PROGRESS=$(PROGRESS)
+	cd rs && make all-streams NODE_COUNT=$(NODE_COUNT) MSG_SIZE=$(MSG_SIZE) MSG_COUNT=$(MSG_COUNT) NUM_CHUNKS=$(NUM_CHUNKS) PROGRESS=$(PROGRESS) LOG_LEVEL=$(LOG_LEVEL)
 
 # Test all protocol results
 test-all:

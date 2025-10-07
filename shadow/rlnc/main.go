@@ -16,6 +16,8 @@ import (
 	"github.com/ethp2p/eth-ec-broadcast/host"
 	"github.com/ethp2p/eth-ec-broadcast/pubsub"
 	"github.com/ethp2p/eth-ec-broadcast/shadow/topology"
+
+	logging "github.com/ipfs/go-log/v2"
 )
 
 func main() {
@@ -27,16 +29,24 @@ func main() {
 		numChunks    = flag.Int("num-chunks", 4, "Number of chunks to divide each message into")
 		topologyFile = flag.String("topology-file", "", "Path to topology JSON file (if not specified, uses linear topology)")
 		useStreams   = flag.Bool("use-streams", false, "Use QUIC streams instead of datagrams")
+		logLevel     = flag.String("log-level", "info", "Log level (debug, info, warn, error)")
 	)
 	flag.Parse()
 
 	// Setup logging
 	log.SetPrefix(fmt.Sprintf("[rlnc-node-%d] ", *nodeID))
-	log.SetFlags(log.LstdFlags | log.Lshortfile)
+	log.SetFlags(log.LstdFlags | log.Lshortfile | log.Lmicroseconds)
+
+	// Set log level for all subsystems
+	level, err := logging.LevelFromString(*logLevel)
+	if err != nil {
+		log.Printf("Invalid log level %q, using info", *logLevel)
+		level = logging.LevelInfo
+	}
+	logging.SetAllLoggers(level)
 
 	// Load topology
 	var topo *topology.Topology
-	var err error
 
 	if *topologyFile != "" {
 		// Load from file

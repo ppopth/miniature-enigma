@@ -7,6 +7,7 @@ NODE_COUNT ?= 10
 MSG_SIZE ?= 64
 MSG_COUNT ?= 5
 PROGRESS ?= false
+LOG_LEVEL ?= info
 
 # Check dependencies
 check-deps:
@@ -26,7 +27,7 @@ build: check-deps
 # Generate network graph and Shadow configuration
 generate-config: check-deps
 	@echo "Generating Shadow network configuration for $(NODE_COUNT) nodes (gossipsub)..."
-	python3 ../network_graph.py $(NODE_COUNT) $(MSG_SIZE) $(MSG_COUNT) gossipsub
+	python3 ../network_graph.py $(NODE_COUNT) $(MSG_SIZE) $(MSG_COUNT) gossipsub "--log-level $(LOG_LEVEL)"
 	@test -f shadow-gossipsub.yaml && test -f graph.gml || (echo "Config generation failed" && exit 1)
 	@echo "Configuration generated"
 
