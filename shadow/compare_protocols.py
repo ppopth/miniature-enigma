@@ -61,7 +61,7 @@ def generate_topology(node_count, degree=3):
         return False
 
 
-def run_simulation(protocol, node_count, msg_size, msg_count, num_chunks=None, log_level="info"):
+def run_simulation(protocol, node_count, msg_size, msg_count, num_chunks=None, multiplier=None, log_level="info"):
     """Run a Shadow simulation for the specified protocol."""
     print(f"\n{'='*60}")
     print(f"Running {protocol.upper()} simulation...")
@@ -78,6 +78,9 @@ def run_simulation(protocol, node_count, msg_size, msg_count, num_chunks=None, l
 
     if num_chunks and protocol in ["rlnc", "rs"]:
         cmd.append(f"NUM_CHUNKS={num_chunks}")
+
+    if multiplier and protocol in ["rlnc", "rs"]:
+        cmd.append(f"MULTIPLIER={multiplier}")
 
     try:
         result = subprocess.run(cmd, check=True, capture_output=True, text=True)
@@ -282,6 +285,8 @@ Examples:
                         help='Number of nodes (default: 10)')
     parser.add_argument('--msg-count', type=int, default=1,
                         help='Number of messages to send (default: 1)')
+    parser.add_argument('--multiplier', type=int, default=4,
+                        help='Multiplier for publish and forward (RS: includes min emit count) (default: 4)')
     parser.add_argument('--log-level', type=str, default='info',
                         choices=['debug', 'info', 'warn', 'error'],
                         help='Log level for simulations (default: info)')
@@ -330,6 +335,7 @@ Output:          {args.output}
             args.msg_size,
             args.msg_count,
             args.num_chunks if protocol in ['rs', 'rlnc'] else None,
+            args.multiplier if protocol in ['rs', 'rlnc'] else None,
             args.log_level
         )
 

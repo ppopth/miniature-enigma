@@ -7,6 +7,7 @@ NODE_COUNT ?= 10
 MSG_SIZE ?= 64
 MSG_COUNT ?= 5
 NUM_CHUNKS ?= 8
+MULTIPLIER ?= 4
 PROGRESS ?= false
 LOG_LEVEL ?= info
 
@@ -28,14 +29,14 @@ build: check-deps
 # Generate network graph and Shadow configuration
 generate-config: check-deps
 	@echo "Generating Shadow network configuration for $(NODE_COUNT) nodes (RLNC)..."
-	python3 ../network_graph.py $(NODE_COUNT) $(MSG_SIZE) $(MSG_COUNT) rlnc "-num-chunks $(NUM_CHUNKS) --log-level $(LOG_LEVEL)"
+	python3 ../network_graph.py $(NODE_COUNT) $(MSG_SIZE) $(MSG_COUNT) rlnc "-num-chunks $(NUM_CHUNKS) -multiplier $(MULTIPLIER) --log-level $(LOG_LEVEL)"
 	@test -f shadow-rlnc.yaml && test -f graph.gml || (echo "Config generation failed" && exit 1)
 	@echo "Configuration generated"
 
 # Generate network graph and Shadow configuration for streams
 generate-config-streams: check-deps
 	@echo "Generating Shadow network configuration for $(NODE_COUNT) nodes (RLNC with streams)..."
-	python3 ../network_graph.py $(NODE_COUNT) $(MSG_SIZE) $(MSG_COUNT) rlnc "-num-chunks $(NUM_CHUNKS) --use-streams --log-level $(LOG_LEVEL)"
+	python3 ../network_graph.py $(NODE_COUNT) $(MSG_SIZE) $(MSG_COUNT) rlnc "-num-chunks $(NUM_CHUNKS) -multiplier $(MULTIPLIER) --use-streams --log-level $(LOG_LEVEL)"
 	@test -f shadow-rlnc.yaml && test -f graph.gml || (echo "Config generation failed" && exit 1)
 	@echo "Configuration generated (with QUIC streams)"
 

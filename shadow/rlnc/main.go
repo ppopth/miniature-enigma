@@ -27,6 +27,7 @@ func main() {
 		msgCount     = flag.Int("msg-count", 5, "Number of messages to publish")
 		msgSize      = flag.Int("msg-size", 32, "Size of each message in bytes")
 		numChunks    = flag.Int("num-chunks", 4, "Number of chunks to divide each message into")
+		multiplier   = flag.Int("multiplier", 4, "Multiplier for publish and forward")
 		topologyFile = flag.String("topology-file", "", "Path to topology JSON file (if not specified, uses linear topology)")
 		useStreams   = flag.Bool("use-streams", false, "Use QUIC streams instead of datagrams")
 		logLevel     = flag.String("log-level", "info", "Log level (debug, info, warn, error)")
@@ -146,8 +147,8 @@ func main() {
 
 	// Create EC router with RLNC
 	router, err := ec.NewEcRouter(encoder, ec.WithEcParams(ec.EcParams{
-		PublishMultiplier: 4, // 4x redundancy when publishing
-		ForwardMultiplier: 8, // 8x when forwarding
+		PublishMultiplier: *multiplier,
+		ForwardMultiplier: *multiplier,
 	}))
 	if err != nil {
 		log.Fatalf("Failed to create EC router: %v", err)

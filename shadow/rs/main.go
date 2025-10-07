@@ -27,6 +27,7 @@ func main() {
 		msgCount     = flag.Int("msg-count", 5, "Number of messages to publish")
 		msgSize      = flag.Int("msg-size", 32, "Size of each message in bytes")
 		numChunks    = flag.Int("num-chunks", 4, "Number of chunks to divide each message into")
+		multiplier   = flag.Int("multiplier", 4, "Multiplier for publish, forward, and min emit count")
 		topologyFile = flag.String("topology-file", "", "Path to topology JSON file (if not specified, uses linear topology)")
 		useStreams   = flag.Bool("use-streams", false, "Use QUIC streams instead of datagrams")
 		logLevel     = flag.String("log-level", "info", "Log level (debug, info, warn, error)")
@@ -131,14 +132,20 @@ func main() {
 	log.Printf("Chunk configuration: %d bytes per chunk, %d elements per chunk, %d bytes network chunk size",
 		messageChunkSize, elementsPerChunk, networkChunkSize)
 
+	// Divide multiplier by 2 since ParityRatio is 100% (already 2x redundancy)
+	effectiveMultiplier := *multiplier / 2
+	if effectiveMultiplier < 1 {
+		effectiveMultiplier = 1
+	}
+
 	rsConfig := &rs.RsEncoderConfig{
-		ParityRatio:      0.5, // 50% redundancy
+		ParityRatio:      1.0, // 100% redundancy
 		MessageChunkSize: messageChunkSize,
 		NetworkChunkSize: networkChunkSize,
 		ElementsPerChunk: elementsPerChunk,
 		Field:            f,
 		PrimitiveElement: f.FromBytes([]byte{0x03}), // 0x03 is primitive in GF(2^8)
-		MinEmitCount:     4,
+		MinEmitCount:     effectiveMultiplier,
 	}
 	encoder, err := rs.NewRsEncoder(rsConfig)
 	if err != nil {
@@ -147,8 +154,8 @@ func main() {
 
 	// Create EC router with Reed-Solomon
 	router, err := ec.NewEcRouter(encoder, ec.WithEcParams(ec.EcParams{
-		PublishMultiplier: 4, // 4x redundancy when publishing
-		ForwardMultiplier: 8, // 8x when forwarding
+		PublishMultiplier: effectiveMultiplier,
+		ForwardMultiplier: effectiveMultiplier,
 	}))
 	if err != nil {
 		log.Fatalf("Failed to create EC router: %v", err)
