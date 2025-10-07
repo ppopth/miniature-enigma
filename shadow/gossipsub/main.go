@@ -95,8 +95,22 @@ func main() {
 
 	log.Printf("Host created with ID: %s, listening on port: %d", h.ID(), hostPort)
 
-	// Create GossipSub instance
-	ps, err := pubsub.NewGossipSub(ctx, h)
+	// Create GossipSub instance with Ethereum consensus-specs parameters
+	// Parameters from: https://github.com/ethereum/consensus-specs/blob/master/specs/phase0/p2p-interface.md
+	// Start with default parameters and override specific values
+	gossipsubParams := pubsub.DefaultGossipSubParams()
+	gossipsubParams.D = 8                                      // topic stable mesh target count
+	gossipsubParams.Dlo = 6                                    // topic stable mesh low watermark
+	gossipsubParams.Dhi = 12                                   // topic stable mesh high watermark
+	gossipsubParams.Dlazy = 6                                  // gossip target
+	gossipsubParams.HeartbeatInterval = 700 * time.Millisecond // 0.7 seconds
+	gossipsubParams.FanoutTTL = 60 * time.Second               // 60 seconds
+	gossipsubParams.HistoryLength = 6                          // mcache_len: number of windows to retain full messages
+	gossipsubParams.HistoryGossip = 3                          // mcache_gossip: number of windows to gossip about
+
+	ps, err := pubsub.NewGossipSub(ctx, h,
+		pubsub.WithGossipSubParams(gossipsubParams),
+	)
 	if err != nil {
 		log.Fatalf("Failed to create gossipsub: %v", err)
 	}
