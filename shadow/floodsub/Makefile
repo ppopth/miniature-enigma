@@ -4,7 +4,7 @@
 
 # Default parameters
 NODE_COUNT ?= 10
-MSG_SIZE ?= 64
+MSG_SIZE ?= 256
 MSG_COUNT ?= 5
 PROGRESS ?= false
 LOG_LEVEL ?= info
@@ -100,7 +100,7 @@ help:
 	@echo "Examples:"
 	@echo "  make all                                    # Run with defaults (QUIC datagrams)"
 	@echo "  make all-streams                            # Run with QUIC streams"
-	@echo "  make run-sim NODE_COUNT=20 MSG_SIZE=128    # Custom parameters"
+	@echo "  make run-sim NODE_COUNT=20 MSG_SIZE=512    # Custom parameters"
 	@echo "  make run-sim-streams NODE_COUNT=20         # Run with QUIC streams"
 	@echo "  make run-sim PROGRESS=true                 # Run with progress bar"
 	@echo "  make test                                  # Test existing results"

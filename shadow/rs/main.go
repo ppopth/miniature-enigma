@@ -113,12 +113,14 @@ func main() {
 	log.Printf("Calculated chunk size: %d bytes (message size %d / %d chunks)",
 		messageChunkSize, *msgSize, *numChunks)
 
-	// Create Reed-Solomon encoder with binary field GF(2^8)
-	irreducible := big.NewInt(0x11B) // x^8 + x^4 + x^3 + x + 1
-	f := field.NewBinaryField(8, irreducible)
+	// Use a large 256-bit prime field for very fast performance (same as RLNC default)
+	// 2^256 + 297 is a large prime that provides excellent performance
+	p := new(big.Int).Exp(big.NewInt(2), big.NewInt(256), nil)
+	p.Add(p, big.NewInt(297))
+	f := field.NewPrimeField(p)
 
-	// For GF(2^8): Each field element can hold 1 byte
-	bytesPerElement := 1
+	// Each field element can hold 32 bytes (256 bits of data)
+	bytesPerElement := 32
 
 	// Validate that chunk size is compatible with bytes per element
 	if messageChunkSize%bytesPerElement != 0 {
@@ -127,7 +129,7 @@ func main() {
 	}
 
 	elementsPerChunk := messageChunkSize / bytesPerElement
-	networkChunkSize := messageChunkSize // Same size since each element fits in 1 byte
+	networkChunkSize := elementsPerChunk * 33 // Each element needs 33 bytes for network serialization (256 bits + 1 byte)
 
 	log.Printf("Chunk configuration: %d bytes per chunk, %d elements per chunk, %d bytes network chunk size",
 		messageChunkSize, elementsPerChunk, networkChunkSize)
@@ -144,7 +146,7 @@ func main() {
 		NetworkChunkSize: networkChunkSize,
 		ElementsPerChunk: elementsPerChunk,
 		Field:            f,
-		PrimitiveElement: f.FromBytes([]byte{0x03}), // 0x03 is primitive in GF(2^8)
+		PrimitiveElement: f.FromBytes(big.NewInt(3).Bytes()), // 3 is a primitive element for prime fields
 		MinEmitCount:     effectiveMultiplier,
 	}
 	encoder, err := rs.NewRsEncoder(rsConfig)
@@ -229,8 +231,13 @@ func main() {
 	}
 
 	// Wait for network setup and peer discovery (important in Shadow)
-	log.Printf("Waiting for peer discovery and network stabilization...")
-	time.Sleep(5 * time.Second)
+	// Synchronize all nodes to start at exactly 2000/01/01 00:02:00
+	targetTime := time.Date(2000, 1, 1, 0, 2, 0, 0, time.UTC)
+	waitDuration := targetTime.Sub(time.Now())
+	log.Printf("Waiting for peer discovery and network stabilization until 2000/01/01 00:02:00 (%v)...", waitDuration)
+	if waitDuration > 0 {
+		time.Sleep(waitDuration)
+	}
 
 	// Start message receiver goroutine
 	receivedCount := 0

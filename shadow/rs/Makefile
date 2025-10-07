@@ -4,7 +4,7 @@
 
 # Default parameters
 NODE_COUNT ?= 10
-MSG_SIZE ?= 64
+MSG_SIZE ?= 256
 MSG_COUNT ?= 5
 NUM_CHUNKS ?= 8
 MULTIPLIER ?= 4
@@ -103,7 +103,7 @@ help:
 	@echo "Examples:"
 	@echo "  make all                                    # Run with defaults (QUIC datagrams)"
 	@echo "  make all-streams                            # Run with QUIC streams"
-	@echo "  make run-sim NODE_COUNT=20 MSG_SIZE=128    # Custom parameters"
+	@echo "  make run-sim NODE_COUNT=20 MSG_SIZE=512    # Custom parameters"
 	@echo "  make run-sim-streams NODE_COUNT=20         # Run with QUIC streams"
 	@echo "  make run-sim MSG_SIZE=256 NUM_CHUNKS=32    # 256 bytes with 32 chunks"
 	@echo "  make run-sim PROGRESS=true                 # Run with progress bar"

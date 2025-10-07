@@ -10,6 +10,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"fmt"
+	"io"
 	"math/big"
 	"net"
 	"net/netip"
@@ -102,7 +103,7 @@ func NewHost(opts ...HostOption) (*Host, error) {
 	}
 	quicConfig := &quic.Config{
 		EnableDatagrams: true,
-		MaxIdleTimeout:  10 * time.Minute,
+		MaxIdleTimeout:  30 * time.Minute, // Keep connections alive for long Shadow simulations
 	}
 	host.listener, err = host.transport.Listen(tlsConfig, quicConfig)
 	if err != nil {
@@ -136,6 +137,7 @@ func (h *Host) Connect(ctx context.Context, addr net.Addr) error {
 	}
 	quicConfig := &quic.Config{
 		EnableDatagrams: true,
+		MaxIdleTimeout:  30 * time.Minute, // Keep connections alive for long Shadow simulations
 	}
 	conn, err := h.transport.Dial(dialCtx, addr, tlsConfig, quicConfig)
 	if err != nil {
@@ -278,18 +280,18 @@ func (qc *quicStreamConnection) Receive(ctx context.Context) ([]byte, error) {
 		return nil, ctx.Err()
 	}
 
-	// Read length prefix (4 bytes)
+	// Read length prefix (4 bytes) - use io.ReadFull to ensure we get all 4 bytes
 	lengthBuf := make([]byte, 4)
-	if _, err := qc.recvStream.Read(lengthBuf); err != nil {
+	if _, err := io.ReadFull(qc.recvStream, lengthBuf); err != nil {
 		return nil, err
 	}
 
 	length := uint32(lengthBuf[0])<<24 | uint32(lengthBuf[1])<<16 |
 		uint32(lengthBuf[2])<<8 | uint32(lengthBuf[3])
 
-	// Read message data
+	// Read message data - use io.ReadFull to ensure we get all bytes
 	buf := make([]byte, length)
-	if _, err := qc.recvStream.Read(buf); err != nil {
+	if _, err := io.ReadFull(qc.recvStream, buf); err != nil {
 		return nil, err
 	}
 

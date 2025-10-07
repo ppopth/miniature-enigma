@@ -16,6 +16,7 @@ import subprocess
 import os
 import re
 import sys
+import time
 from collections import defaultdict
 import matplotlib.pyplot as plt
 import numpy as np
@@ -82,14 +83,17 @@ def run_simulation(protocol, node_count, msg_size, msg_count, num_chunks=None, m
     if multiplier and protocol in ["rlnc", "rs"]:
         cmd.append(f"MULTIPLIER={multiplier}")
 
+    start_time = time.time()
     try:
         result = subprocess.run(cmd, check=True, capture_output=True, text=True)
-        print(f"✓ {protocol.upper()} simulation completed successfully")
-        return True
+        elapsed = time.time() - start_time
+        print(f"✓ {protocol.upper()} simulation completed successfully in {elapsed:.2f} seconds")
+        return True, elapsed
     except subprocess.CalledProcessError as e:
-        print(f"✗ {protocol.upper()} simulation failed:")
+        elapsed = time.time() - start_time
+        print(f"✗ {protocol.upper()} simulation failed after {elapsed:.2f} seconds:")
         print(e.stderr)
-        return False
+        return False, elapsed
 
 
 def parse_shadow_logs(protocol, node_count, msg_count):
@@ -202,7 +206,7 @@ def compute_cdf(data):
     return sorted_data, cdf
 
 
-def plot_cdfs(gossipsub_latencies, rs_latencies, rlnc_latencies, output_file, msg_size, num_chunks):
+def plot_cdfs(gossipsub_latencies, rs_latencies, rlnc_latencies, output_file, msg_size, num_chunks, node_count, degree, multiplier):
     """Plot CDF comparison of all three protocols."""
     plt.figure(figsize=(10, 6))
 
@@ -213,23 +217,28 @@ def plot_cdfs(gossipsub_latencies, rs_latencies, rlnc_latencies, output_file, ms
 
     # Plot CDFs
     # GossipSub as baseline (dashed line, neutral color)
-    plt.plot(gs_x, gs_y, '--', linewidth=2.5, label='GossipSub (baseline)', color='gray', alpha=0.8)
+    plt.plot(gs_x, gs_y, '--', linewidth=2.5, label='GossipSub (baseline, D=8)', color='gray', alpha=0.8)
 
-    # RS and RLNC as improvements (solid lines, distinct colors)
-    plt.plot(rs_x, rs_y, '-', linewidth=2, label='Reed-Solomon', color='#2E86AB', marker='o',
-             markevery=max(1, len(rs_x)//10), markersize=6)
-    plt.plot(rlnc_x, rlnc_y, '-', linewidth=2, label='RLNC', color='#A23B72', marker='s',
-             markevery=max(1, len(rlnc_x)//10), markersize=6)
+    # RS and RLNC as improvements (solid lines, distinct colors, no markers)
+    plt.plot(rs_x, rs_y, '-', linewidth=2, label=f'RS(2k) (k={num_chunks}, D={multiplier}, routing=random)', color='#2E86AB')
+    plt.plot(rlnc_x, rlnc_y, '-', linewidth=2, label=f'RLNC(n=kD) (k={num_chunks}, D={multiplier}, routing=random)', color='#A23B72')
 
     plt.xlabel('Message Arrival Latency (ms)', fontsize=12)
     plt.ylabel('CDF', fontsize=12)
-    plt.title(f'Message Arrival Time Distribution\n(Message Size: {msg_size}B, Chunks: {num_chunks})',
+    plt.title(f'Message Arrival Time Distribution\n(Nodes: {node_count}, Peers: {degree}, Message Size: {msg_size}B)',
               fontsize=14, fontweight='bold')
     plt.grid(True, alpha=0.3, linestyle='--')
     plt.legend(loc='lower right', fontsize=11, framealpha=0.9)
 
     # Set reasonable axis limits
-    plt.xlim(left=0)
+    # Auto-scale x-axis, but cap at 4 seconds if data exceeds that
+    max_latency = max(max(gs_x, default=0), max(rs_x, default=0), max(rlnc_x, default=0))
+    if max_latency <= 4000:
+        # Use auto-scaling if all data fits within 4 seconds
+        plt.xlim(left=0)
+    else:
+        # Cap at 4 seconds if data exceeds it
+        plt.xlim(left=0, right=4000)
     plt.ylim(0, 1.05)
 
     plt.tight_layout()
@@ -319,6 +328,18 @@ Output:          {args.output}
         print("Install with: pip3 install matplotlib")
         sys.exit(1)
 
+    # Validate message size for RLNC/RS (must be divisible by num_chunks * 32)
+    # Both protocols use 256-bit prime field with 32 bytes per element
+    chunk_size = args.msg_size // args.num_chunks
+    if chunk_size % 32 != 0:
+        print(f"\nError: Invalid message size configuration!")
+        print(f"  Message size ({args.msg_size}) / Num chunks ({args.num_chunks}) = {chunk_size} bytes per chunk")
+        print(f"  Chunk size must be divisible by 32 (field element size)")
+        print(f"\nSuggested fix:")
+        print(f"  - Use MSG_SIZE that is divisible by {args.num_chunks * 32} (NUM_CHUNKS * 32)")
+        print(f"  - For NUM_CHUNKS={args.num_chunks}, use MSG_SIZE >= {args.num_chunks * 32} (e.g., 256, 512, 1024, etc.)")
+        sys.exit(1)
+
     # Generate random regular topology
     if not generate_topology(args.node_count, args.degree):
         print("\nError: Topology generation failed. Aborting.")
@@ -327,9 +348,10 @@ Output:          {args.output}
     # Run simulations for all three protocols
     protocols = ['gossipsub', 'rs', 'rlnc']
     success = {}
+    timings = {}
 
     for protocol in protocols:
-        success[protocol] = run_simulation(
+        success[protocol], timings[protocol] = run_simulation(
             protocol,
             args.node_count,
             args.msg_size,
@@ -342,6 +364,17 @@ Output:          {args.output}
         if not success[protocol]:
             print(f"\nError: {protocol.upper()} simulation failed. Aborting.")
             sys.exit(1)
+
+    # Print timing summary
+    print(f"\n{'='*60}")
+    print("Simulation Timing Summary")
+    print(f"{'='*60}")
+    total_time = sum(timings.values())
+    for protocol in protocols:
+        print(f"{protocol.upper():12s}: {timings[protocol]:6.2f} seconds")
+    print(f"{'─'*60}")
+    print(f"{'Total':12s}: {total_time:6.2f} seconds")
+    print(f"{'='*60}")
 
     # Parse logs and extract arrival times
     print(f"\n{'='*60}")
@@ -368,7 +401,7 @@ Output:          {args.output}
 
     # Plot CDFs
     plot_cdfs(gossipsub_latencies, rs_latencies, rlnc_latencies,
-              args.output, args.msg_size, args.num_chunks)
+              args.output, args.msg_size, args.num_chunks, args.node_count, args.degree, args.multiplier)
 
     print(f"\n{'='*60}")
     print("✓ Protocol comparison completed successfully!")

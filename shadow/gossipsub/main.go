@@ -189,8 +189,13 @@ func main() {
 	}
 
 	// Wait for network setup and peer discovery (important in Shadow)
-	log.Printf("Waiting for peer discovery and network stabilization...")
-	time.Sleep(5 * time.Second)
+	// Synchronize all nodes to start at exactly 2000/01/01 00:02:00
+	targetTime := time.Date(2000, 1, 1, 0, 2, 0, 0, time.UTC)
+	waitDuration := targetTime.Sub(time.Now())
+	log.Printf("Waiting for peer discovery and network stabilization until 2000/01/01 00:02:00 (%v)...", waitDuration)
+	if waitDuration > 0 {
+		time.Sleep(waitDuration)
+	}
 
 	// Start message receiver goroutine
 	receivedCount := 0

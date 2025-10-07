@@ -174,7 +174,7 @@ jobs:
     - name: Run protocol comparison script
       run: |
         cd shadow
-        python3 compare_protocols.py --msg-size 64 --num-chunks 8 --node-count 5 --msg-count 1
+        python3 compare_protocols.py --msg-size 512 --num-chunks 8 --node-count 5 --msg-count 1
       timeout-minutes: 30
 
     - name: Upload comparison plot

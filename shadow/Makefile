@@ -4,7 +4,7 @@
 
 # Default parameters
 NODE_COUNT ?= 10
-MSG_SIZE ?= 64
+MSG_SIZE ?= 256
 MSG_COUNT ?= 5
 NUM_CHUNKS ?= 8
 MULTIPLIER ?= 4
@@ -193,15 +193,15 @@ help:
 	@echo ""
 	@echo "Examples:"
 	@echo "  make all                                    # Run all protocols with defaults"
-	@echo "  make floodsub NODE_COUNT=20 MSG_SIZE=128   # Run FloodSub with custom parameters"
+	@echo "  make floodsub NODE_COUNT=20 MSG_SIZE=512   # Run FloodSub with custom parameters"
 	@echo "  make floodsub-streams NODE_COUNT=10        # Run FloodSub with QUIC streams"
 	@echo "  make gossipsub NODE_COUNT=10               # Run GossipSub with 10 nodes"
 	@echo "  make rlnc NODE_COUNT=15                    # Run RLNC with 15 nodes"
 	@echo "  make rlnc-streams NODE_COUNT=15            # Run RLNC with QUIC streams"
 	@echo "  make rs NODE_COUNT=10                      # Run Reed-Solomon with 10 nodes"
 	@echo "  make rs-streams NODE_COUNT=10              # Run Reed-Solomon with QUIC streams"
-	@echo "  make rlnc MSG_SIZE=256 NUM_CHUNKS=32       # Run RLNC with 32 chunks"
-	@echo "  make rs MSG_SIZE=64 NUM_CHUNKS=8           # Run Reed-Solomon with 8 chunks"
+	@echo "  make rlnc MSG_SIZE=512 NUM_CHUNKS=16       # Run RLNC with 16 chunks"
+	@echo "  make rs MSG_SIZE=512 NUM_CHUNKS=16         # Run Reed-Solomon with 16 chunks"
 	@echo "  make floodsub PROGRESS=true                # Run FloodSub with progress bar"
 	@echo "  make test-all                              # Test all existing results"
 	@echo ""
