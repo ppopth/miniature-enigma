@@ -189,16 +189,31 @@ type Connection interface {
 	Close() error
 }
 
+// ByteCounter is an interface for tracking sent/received bytes
+type ByteCounter interface {
+	AddBytesSent(n uint64)
+	AddBytesReceived(n uint64)
+}
+
 // quicDatagramConnection wraps a QUIC connection using datagrams
 type quicDatagramConnection struct {
-	conn quic.Connection
+	conn    quic.Connection
+	counter ByteCounter
 }
 
 func (qc *quicDatagramConnection) Send(buf []byte) error {
-	return qc.conn.SendDatagram(buf)
+	err := qc.conn.SendDatagram(buf)
+	if err == nil && qc.counter != nil {
+		qc.counter.AddBytesSent(uint64(len(buf)))
+	}
+	return err
 }
 func (qc *quicDatagramConnection) Receive(ctx context.Context) ([]byte, error) {
-	return qc.conn.ReceiveDatagram(ctx)
+	buf, err := qc.conn.ReceiveDatagram(ctx)
+	if err == nil && qc.counter != nil {
+		qc.counter.AddBytesReceived(uint64(len(buf)))
+	}
+	return buf, err
 }
 func (qc *quicDatagramConnection) LocalAddr() net.Addr {
 	return qc.conn.LocalAddr()
@@ -218,12 +233,14 @@ type quicStreamConnection struct {
 	recvStream quic.Stream
 	sendMutex  sync.Mutex
 	recvReady  chan struct{} // Closed when recvStream is available
+	counter    ByteCounter
 }
 
-func newQuicStreamConnection(conn quic.Connection) *quicStreamConnection {
+func newQuicStreamConnection(conn quic.Connection, counter ByteCounter) *quicStreamConnection {
 	sc := &quicStreamConnection{
 		conn:      conn,
 		recvReady: make(chan struct{}),
+		counter:   counter,
 	}
 	// Start accepting streams in the background
 	go sc.acceptStreams()
@@ -268,6 +285,10 @@ func (qc *quicStreamConnection) Send(buf []byte) error {
 
 	// Write message data
 	_, err := qc.sendStream.Write(buf)
+	if err == nil && qc.counter != nil {
+		// Count length prefix + data
+		qc.counter.AddBytesSent(uint64(4 + len(buf)))
+	}
 	return err
 }
 
@@ -293,6 +314,11 @@ func (qc *quicStreamConnection) Receive(ctx context.Context) ([]byte, error) {
 	buf := make([]byte, length)
 	if _, err := io.ReadFull(qc.recvStream, buf); err != nil {
 		return nil, err
+	}
+
+	if qc.counter != nil {
+		// Count length prefix + data
+		qc.counter.AddBytesReceived(uint64(4 + len(buf)))
 	}
 
 	return buf, nil
@@ -334,9 +360,9 @@ func (h *Host) SetPeerHandlers(addHandler AddPeerHandler, removeHandler RemovePe
 func (h *Host) newConnection(conn quic.Connection) Connection {
 	switch h.transportMode {
 	case TransportDatagram:
-		return &quicDatagramConnection{conn: conn}
+		return &quicDatagramConnection{conn: conn, counter: h}
 	case TransportStream:
-		return newQuicStreamConnection(conn)
+		return newQuicStreamConnection(conn, h)
 	default:
 		// This should never happen due to validation in WithTransportMode
 		panic(fmt.Sprintf("unsupported transport mode: %d", h.transportMode))
@@ -494,8 +520,41 @@ type Host struct {
 	transport *quic.Transport // QUIC transport layer
 	listener  *quic.Listener  // Incoming connection listener
 
+	// Byte counters
+	bytesSent     uint64     // Total bytes sent
+	bytesReceived uint64     // Total bytes received
+	statsMutex    sync.Mutex // Protects byte counters
+
 	addHandler    AddPeerHandler    // Called when peer connects
 	removeHandler RemovePeerHandler // Called when peer disconnects
+}
+
+// AddBytesSent increments the sent byte counter
+func (h *Host) AddBytesSent(n uint64) {
+	h.statsMutex.Lock()
+	defer h.statsMutex.Unlock()
+	h.bytesSent += n
+}
+
+// AddBytesReceived increments the received byte counter
+func (h *Host) AddBytesReceived(n uint64) {
+	h.statsMutex.Lock()
+	defer h.statsMutex.Unlock()
+	h.bytesReceived += n
+}
+
+// GetBytesSent returns the total bytes sent
+func (h *Host) GetBytesSent() uint64 {
+	h.statsMutex.Lock()
+	defer h.statsMutex.Unlock()
+	return h.bytesSent
+}
+
+// GetBytesReceived returns the total bytes received
+func (h *Host) GetBytesReceived() uint64 {
+	h.statsMutex.Lock()
+	defer h.statsMutex.Unlock()
+	return h.bytesReceived
 }
 
 // createTLSCertFromKey creates a self-signed certificate from a private key

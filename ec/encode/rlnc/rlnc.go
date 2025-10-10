@@ -9,7 +9,11 @@ import (
 	"github.com/ethp2p/eth-ec-broadcast/ec/encode"
 	"github.com/ethp2p/eth-ec-broadcast/ec/field"
 	"github.com/ethp2p/eth-ec-broadcast/pb"
+
+	logging "github.com/ipfs/go-log/v2"
 )
+
+var log = logging.Logger("rlnc")
 
 // Chunk represents a network coding chunk with its linear combination coefficients
 type Chunk struct {
@@ -64,6 +68,10 @@ type RlncEncoder struct {
 	mutex     sync.Mutex                   // Protects chunks map and REF data
 	chunks    map[string][]Chunk           // Storage for chunks by message ID
 	coeffsREF map[string][][]field.Element // REF form of coefficient vectors by message ID
+
+	statsMutex    sync.Mutex // Protects chunk statistics
+	usefulChunks  uint64     // Number of useful chunks (linearly independent)
+	uselessChunks uint64     // Number of useless chunks (duplicates, linearly dependent)
 }
 
 func NewRlncEncoder(config *RlncEncoderConfig) (*RlncEncoder, error) {
@@ -95,16 +103,34 @@ func NewRlncEncoder(config *RlncEncoderConfig) (*RlncEncoder, error) {
 	return r, nil
 }
 
+// incrementUsefulChunks increments the useful chunk counter and logs the event
+func (r *RlncEncoder) incrementUsefulChunks() {
+	r.statsMutex.Lock()
+	r.usefulChunks++
+	log.Infof("Chunk event: Useful: %d, Useless: %d", r.usefulChunks, r.uselessChunks)
+	r.statsMutex.Unlock()
+}
+
+// incrementUselessChunks increments the useless chunk counter and logs the event
+func (r *RlncEncoder) incrementUselessChunks() {
+	r.statsMutex.Lock()
+	r.uselessChunks++
+	log.Infof("Chunk event: Useful: %d, Useless: %d", r.usefulChunks, r.uselessChunks)
+	r.statsMutex.Unlock()
+}
+
 // VerifyThenAddChunk verifies a chunk and stores it if valid and linearly independent
 func (r *RlncEncoder) VerifyThenAddChunk(chunk encode.Chunk) bool {
 	// Convert generic chunk to RLNC chunk type
 	rlncChunk, ok := chunk.(Chunk)
 	if !ok {
+		r.incrementUselessChunks()
 		return false
 	}
 
 	// Call internal verifier if available
 	if r.config.Verifier != nil && !r.config.Verifier.Verify(&rlncChunk) {
+		r.incrementUselessChunks()
 		return false
 	}
 
@@ -120,12 +146,15 @@ func (r *RlncEncoder) VerifyThenAddChunk(chunk encode.Chunk) bool {
 	// Check if the new chunk adds linearly independent information and get updated REF
 	newREF, isIndependent := field.IsLinearlyIndependentIncremental(existingREF, rlncChunk.Coeffs, r.config.Field)
 	if !isIndependent {
+		r.incrementUselessChunks()
 		return false
 	}
 
 	// Add chunk to storage and update REF
 	r.chunks[messageID] = append(r.chunks[messageID], rlncChunk)
 	r.coeffsREF[messageID] = newREF
+
+	r.incrementUsefulChunks()
 
 	return true
 }
