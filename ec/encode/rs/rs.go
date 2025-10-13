@@ -76,9 +76,9 @@ type RsEncoder struct {
 	chunkOrder  map[string][]int         // Order in which chunks were received
 	emitCounts  map[string]map[int]int   // Track how many times each chunk has been emitted
 
-	statsMutex    sync.Mutex // Protects chunk statistics
-	usefulChunks  uint64     // Number of useful chunks (needed for reconstruction)
-	uselessChunks uint64     // Number of useless chunks (duplicates, verification failures, post-reconstruction)
+	statsMutex   sync.Mutex // Protects chunk statistics
+	usefulChunks uint64     // Number of useful chunks (needed for reconstruction)
+	unusedChunks uint64     // Number of unused chunks (duplicates, verification failures, post-reconstruction)
 }
 
 // NewRsEncoder creates a new Reed-Solomon encoder
@@ -137,15 +137,15 @@ func NewRsEncoder(config *RsEncoderConfig) (*RsEncoder, error) {
 func (r *RsEncoder) incrementUsefulChunks() {
 	r.statsMutex.Lock()
 	r.usefulChunks++
-	log.Infof("Chunk event: Useful: %d, Useless: %d", r.usefulChunks, r.uselessChunks)
+	log.Infof("Chunk event: Useful: %d, Unused: %d", r.usefulChunks, r.unusedChunks)
 	r.statsMutex.Unlock()
 }
 
-// incrementUselessChunks increments the useless chunk counter and logs the event
-func (r *RsEncoder) incrementUselessChunks() {
+// incrementUnusedChunks increments the unused chunk counter and logs the event
+func (r *RsEncoder) incrementUnusedChunks() {
 	r.statsMutex.Lock()
-	r.uselessChunks++
-	log.Infof("Chunk event: Useful: %d, Useless: %d", r.usefulChunks, r.uselessChunks)
+	r.unusedChunks++
+	log.Infof("Chunk event: Useful: %d, Unused: %d", r.usefulChunks, r.unusedChunks)
 	r.statsMutex.Unlock()
 }
 
@@ -170,7 +170,7 @@ func (r *RsEncoder) VerifyThenAddChunk(chunk encode.Chunk) bool {
 	// Convert generic chunk to RS chunk type
 	rsChunk, ok := chunk.(Chunk)
 	if !ok {
-		r.incrementUselessChunks()
+		r.incrementUnusedChunks()
 		return false
 	}
 
@@ -187,7 +187,7 @@ func (r *RsEncoder) VerifyThenAddChunk(chunk encode.Chunk) bool {
 	chunkCount := rsChunk.ChunkCount
 	if chunkCount <= 0 {
 		// Invalid chunk count
-		r.incrementUselessChunks()
+		r.incrementUnusedChunks()
 		return false
 	}
 
@@ -195,7 +195,7 @@ func (r *RsEncoder) VerifyThenAddChunk(chunk encode.Chunk) bool {
 	if existingCount, exists := r.chunkCounts[rsChunk.MessageID]; exists {
 		if existingCount != chunkCount {
 			// Inconsistent chunk count - reject the chunk
-			r.incrementUselessChunks()
+			r.incrementUnusedChunks()
 			return false
 		}
 	} else {
@@ -212,20 +212,20 @@ func (r *RsEncoder) VerifyThenAddChunk(chunk encode.Chunk) bool {
 	// Check if chunk index is valid
 	totalChunks := chunkCount + parityCount
 	if rsChunk.Index < 0 || rsChunk.Index >= totalChunks {
-		r.incrementUselessChunks()
+		r.incrementUnusedChunks()
 		return false
 	}
 
 	// Check if chunk with same index already exists
 	if _, exists := r.chunks[rsChunk.MessageID][rsChunk.Index]; exists {
-		r.incrementUselessChunks()
+		r.incrementUnusedChunks()
 		return false
 	}
 
 	// Use chunk verifier if configured
 	if r.config.ChunkVerifier != nil {
 		if !r.config.ChunkVerifier.Verify(&rsChunk) {
-			r.incrementUselessChunks()
+			r.incrementUnusedChunks()
 			return false
 		}
 	}
@@ -236,10 +236,10 @@ func (r *RsEncoder) VerifyThenAddChunk(chunk encode.Chunk) bool {
 	// Track the order this chunk was received
 	r.chunkOrder[rsChunk.MessageID] = append(r.chunkOrder[rsChunk.MessageID], rsChunk.Index)
 
-	// Check if we can already reconstruct - if so, this chunk is useless
+	// Check if we can already reconstruct - if so, this chunk is unused
 	if currentChunkCount >= chunkCount {
 		// Already have enough chunks to reconstruct
-		r.incrementUselessChunks()
+		r.incrementUnusedChunks()
 	} else {
 		r.incrementUsefulChunks()
 	}
