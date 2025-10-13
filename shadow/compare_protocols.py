@@ -276,9 +276,11 @@ def plot_chunk_statistics(rs_stats, rlnc_stats, output_file, node_count, num_chu
         (f'RLNC(n=kD) (k={num_chunks}, D={multiplier}, routing=random)', rlnc_stats, '#A23B72')
     ]
 
-    # First pass: compute all data to find the global max y-value
+    # First pass: compute all data to find the global max y-value and x-range
     all_plot_data = []
     global_max_y = 0
+    global_min_x = 0
+    global_max_x = 0
 
     for protocol_idx, (protocol_name, stats, color) in enumerate(protocols):
         if not stats:
@@ -333,6 +335,11 @@ def plot_chunk_statistics(rs_stats, rlnc_stats, output_file, node_count, num_chu
         max_total = max([useful + unused for useful, unused in zip(avg_useful, avg_unused)]) if avg_useful else 0
         global_max_y = max(global_max_y, max_total)
 
+        # Calculate x-axis range
+        if adjusted_times:
+            global_min_x = min(global_min_x, min(adjusted_times))
+            global_max_x = max(global_max_x, max(adjusted_times))
+
         # Store data for second pass
         all_plot_data.append({
             'adjusted_times': adjusted_times,
@@ -384,13 +391,8 @@ def plot_chunk_statistics(rs_stats, rlnc_stats, output_file, node_count, num_chu
         ]
         ax.legend(handles=legend_elements, loc='upper left', fontsize=10, framealpha=0.9)
 
-        # Set x-axis to start from 0 (publish time) if we have data
-        if adjusted_times:
-            ax.set_xlim(left=min(0, min(adjusted_times)))
-        else:
-            ax.set_xlim(left=0)
-
-        # Set y-axis with same scale for both plots
+        # Set x-axis and y-axis with same scale for both plots
+        ax.set_xlim(left=min(0, global_min_x), right=global_max_x * 1.02)  # Add 2% padding at right
         ax.set_ylim(bottom=0, top=global_max_y * 1.05)  # Add 5% padding at top
 
     plt.tight_layout()
