@@ -510,6 +510,9 @@ Examples:
 
   # Specify custom topology degree and output files
   python3 compare_protocols.py --msg-size 1024 --num-chunks 32 --degree 4 -o results/comparison.png --chunk-stats-output results/chunks.png
+
+  # Skip simulations and use existing results for plotting
+  python3 compare_protocols.py --msg-size 256 --num-chunks 8 --skip-simulations
         """
     )
 
@@ -532,6 +535,8 @@ Examples:
                         help='Output file for CDF plot (default: protocol_comparison_cdf.png)')
     parser.add_argument('--chunk-stats-output', type=str, default='protocol_chunk_statistics.png',
                         help='Output file for chunk statistics plot (default: protocol_chunk_statistics.png)')
+    parser.add_argument('--skip-simulations', action='store_true',
+                        help='Skip running simulations and use existing results for plotting')
 
     args = parser.parse_args()
 
@@ -558,53 +563,58 @@ Chunk Stats:     {args.chunk_stats_output}
         print("Install with: pip3 install matplotlib")
         sys.exit(1)
 
-    # Validate message size for RLNC/RS (must be divisible by num_chunks * 32)
-    # Both protocols use 256-bit prime field with 32 bytes per element
-    chunk_size = args.msg_size // args.num_chunks
-    if chunk_size % 32 != 0:
-        print(f"\nError: Invalid message size configuration!")
-        print(f"  Message size ({args.msg_size}) / Num chunks ({args.num_chunks}) = {chunk_size} bytes per chunk")
-        print(f"  Chunk size must be divisible by 32 (field element size)")
-        print(f"\nSuggested fix:")
-        print(f"  - Use MSG_SIZE that is divisible by {args.num_chunks * 32} (NUM_CHUNKS * 32)")
-        print(f"  - For NUM_CHUNKS={args.num_chunks}, use MSG_SIZE >= {args.num_chunks * 32} (e.g., 256, 512, 1024, etc.)")
-        sys.exit(1)
-
-    # Generate random regular topology
-    if not generate_topology(args.node_count, args.degree):
-        print("\nError: Topology generation failed. Aborting.")
-        sys.exit(1)
-
-    # Run simulations for all three protocols
-    protocols = ['gossipsub', 'rs', 'rlnc']
-    success = {}
-    timings = {}
-
-    for protocol in protocols:
-        success[protocol], timings[protocol] = run_simulation(
-            protocol,
-            args.node_count,
-            args.msg_size,
-            args.msg_count,
-            args.num_chunks if protocol in ['rs', 'rlnc'] else None,
-            args.multiplier if protocol in ['rs', 'rlnc'] else None,
-            args.log_level
-        )
-
-        if not success[protocol]:
-            print(f"\nError: {protocol.upper()} simulation failed. Aborting.")
+    if not args.skip_simulations:
+        # Validate message size for RLNC/RS (must be divisible by num_chunks * 32)
+        # Both protocols use 256-bit prime field with 32 bytes per element
+        chunk_size = args.msg_size // args.num_chunks
+        if chunk_size % 32 != 0:
+            print(f"\nError: Invalid message size configuration!")
+            print(f"  Message size ({args.msg_size}) / Num chunks ({args.num_chunks}) = {chunk_size} bytes per chunk")
+            print(f"  Chunk size must be divisible by 32 (field element size)")
+            print(f"\nSuggested fix:")
+            print(f"  - Use MSG_SIZE that is divisible by {args.num_chunks * 32} (NUM_CHUNKS * 32)")
+            print(f"  - For NUM_CHUNKS={args.num_chunks}, use MSG_SIZE >= {args.num_chunks * 32} (e.g., 256, 512, 1024, etc.)")
             sys.exit(1)
 
-    # Print timing summary
-    print(f"\n{'='*60}")
-    print("Simulation Timing Summary")
-    print(f"{'='*60}")
-    total_time = sum(timings.values())
-    for protocol in protocols:
-        print(f"{protocol.upper():12s}: {timings[protocol]:6.2f} seconds")
-    print(f"{'─'*60}")
-    print(f"{'Total':12s}: {total_time:6.2f} seconds")
-    print(f"{'='*60}")
+        # Generate random regular topology
+        if not generate_topology(args.node_count, args.degree):
+            print("\nError: Topology generation failed. Aborting.")
+            sys.exit(1)
+
+        # Run simulations for all three protocols
+        protocols = ['gossipsub', 'rs', 'rlnc']
+        success = {}
+        timings = {}
+
+        for protocol in protocols:
+            success[protocol], timings[protocol] = run_simulation(
+                protocol,
+                args.node_count,
+                args.msg_size,
+                args.msg_count,
+                args.num_chunks if protocol in ['rs', 'rlnc'] else None,
+                args.multiplier if protocol in ['rs', 'rlnc'] else None,
+                args.log_level
+            )
+
+            if not success[protocol]:
+                print(f"\nError: {protocol.upper()} simulation failed. Aborting.")
+                sys.exit(1)
+
+        # Print timing summary
+        print(f"\n{'='*60}")
+        print("Simulation Timing Summary")
+        print(f"{'='*60}")
+        total_time = sum(timings.values())
+        for protocol in protocols:
+            print(f"{protocol.upper():12s}: {timings[protocol]:6.2f} seconds")
+        print(f"{'─'*60}")
+        print(f"{'Total':12s}: {total_time:6.2f} seconds")
+        print(f"{'='*60}")
+    else:
+        print(f"\n{'='*60}")
+        print("Skipping simulations - using existing results")
+        print(f"{'='*60}")
 
     # Parse logs and extract arrival times
     print(f"\n{'='*60}")
