@@ -62,7 +62,7 @@ def generate_topology(node_count, degree=3):
         return False
 
 
-def run_simulation(protocol, node_count, msg_size, msg_count, num_chunks=None, multiplier=None, log_level="info"):
+def run_simulation(protocol, node_count, msg_size, msg_count, num_chunks=None, multiplier=None, log_level="info", disable_completion_signal=False):
     """Run a Shadow simulation for the specified protocol."""
     print(f"\n{'='*60}")
     print(f"Running {protocol.upper()} simulation...")
@@ -82,6 +82,9 @@ def run_simulation(protocol, node_count, msg_size, msg_count, num_chunks=None, m
 
     if multiplier and protocol in ["rlnc", "rs"]:
         cmd.append(f"MULTIPLIER={multiplier}")
+
+    if disable_completion_signal and protocol in ["rlnc", "rs"]:
+        cmd.append("DISABLE_COMPLETION_SIGNAL=true")
 
     start_time = time.time()
     try:
@@ -202,7 +205,7 @@ def parse_chunk_statistics(protocol, node_count):
     """
     Parse chunk statistics from Shadow logs.
 
-    Returns a dict: {node_id: [(timestamp_ns, useful_chunks, useless_chunks, unused_chunks)]}
+    Returns a dict: {node_id: [(timestamp_ns, useful_chunks, useless_chunks, unused_chunks, prevented_chunks)]}
     """
     log_dir = f"{protocol}/shadow.data/hosts"
 
@@ -210,7 +213,7 @@ def parse_chunk_statistics(protocol, node_count):
         print(f"Warning: Log directory not found: {log_dir}")
         return {}
 
-    # Store chunk stats: node_id -> [(time, useful, useless, unused)]
+    # Store chunk stats: node_id -> [(time, useful, useless, unused, prevented)]
     node_stats = defaultdict(list)
 
     # Parse logs for each node
@@ -229,21 +232,27 @@ def parse_chunk_statistics(protocol, node_count):
 
         log_file = os.path.join(node_dir, log_files[0])
 
+        # Track cumulative prevented count and last known chunk values for this node
+        cumulative_prevented = 0
+        last_useful = 0
+        last_useless = 0
+        last_unused = 0
+
         with open(log_file, 'r') as f:
             for line in f:
+                # Extract timestamp - ISO 8601 format: 2000-01-01T00:02:00.002Z
+                timestamp_match = re.search(r'(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})\.(\d{3})', line)
+                if not timestamp_match:
+                    continue
+
+                hour = int(timestamp_match.group(4))
+                minute = int(timestamp_match.group(5))
+                second = int(timestamp_match.group(6))
+                millisecond = int(timestamp_match.group(7))
+                timestamp_ns = (hour * 3600 + minute * 60 + second) * 1_000_000_000 + millisecond * 1_000_000
+
                 # Look for chunk event logs: "Chunk event: Useful: X, Useless: Y, Unused: Z"
                 if "Chunk event:" in line:
-                    # Extract timestamp - ISO 8601 format: 2000-01-01T00:02:00.002Z
-                    timestamp_match = re.search(r'(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})\.(\d{3})', line)
-                    if not timestamp_match:
-                        continue
-
-                    hour = int(timestamp_match.group(4))
-                    minute = int(timestamp_match.group(5))
-                    second = int(timestamp_match.group(6))
-                    millisecond = int(timestamp_match.group(7))
-                    timestamp_ns = (hour * 3600 + minute * 60 + second) * 1_000_000_000 + millisecond * 1_000_000
-
                     # Extract useful, useless, and unused chunks
                     useful_match = re.search(r'Useful: (\d+)', line)
                     useless_match = re.search(r'Useless: (\d+)', line)
@@ -253,7 +262,17 @@ def parse_chunk_statistics(protocol, node_count):
                         useful_chunks = int(useful_match.group(1))
                         useless_chunks = int(useless_match.group(1))
                         unused_chunks = int(unused_match.group(1))
-                        node_stats[node_id].append((timestamp_ns, useful_chunks, useless_chunks, unused_chunks))
+                        # Update last known values
+                        last_useful = useful_chunks
+                        last_useless = useless_chunks
+                        last_unused = unused_chunks
+                        node_stats[node_id].append((timestamp_ns, useful_chunks, useless_chunks, unused_chunks, cumulative_prevented))
+
+                # Look for prevented chunk logs: "Prevented chunk send for message"
+                elif "Prevented chunk send for message" in line:
+                    cumulative_prevented += 1
+                    # Add entry with updated prevented count and last known chunk values
+                    node_stats[node_id].append((timestamp_ns, last_useful, last_useless, last_unused, cumulative_prevented))
 
     return node_stats
 
@@ -268,14 +287,18 @@ def compute_cdf(data):
     return sorted_data, cdf
 
 
-def plot_chunk_statistics(rs_stats, rlnc_stats, output_file, node_count, num_chunks, multiplier):
+def plot_chunk_statistics(rs_stats, rlnc_stats, output_file, node_count, num_chunks, multiplier, msg_size, degree, disable_completion_signal=False):
     """Plot time series of useful, useless, and unused chunks for RS and RLNC protocols."""
     fig, axes = plt.subplots(1, 2, figsize=(16, 6))
-    fig.suptitle('Chunk Statistics Over Time (Average Per Node)', fontsize=16, fontweight='bold')
+    fig.suptitle(f'Chunk Statistics Over Time (Average Per Node)\n(Nodes: {node_count}, Peers: {degree}, Message Size: {msg_size}B)',
+                 fontsize=16, fontweight='bold')
+
+    # Add "(no completion signal)" suffix only when disabled (not when enabled, since that's default)
+    signal_suffix = " (no completion signal)" if disable_completion_signal else ""
 
     protocols = [
-        (f'RS(2k) (k={num_chunks}, D={multiplier}, routing=random)', rs_stats, '#2E86AB'),
-        (f'RLNC(n=kD) (k={num_chunks}, D={multiplier}, routing=random)', rlnc_stats, '#A23B72')
+        (f'RS(2k) (k={num_chunks}, D={multiplier}, routing=random){signal_suffix}', rs_stats, '#2E86AB'),
+        (f'RLNC(n=kD) (k={num_chunks}, D={multiplier}, routing=random){signal_suffix}', rlnc_stats, '#A23B72')
     ]
 
     # First pass: compute all data to find the global max y-value and x-range
@@ -293,7 +316,7 @@ def plot_chunk_statistics(rs_stats, rlnc_stats, output_file, node_count, num_chu
         # First, collect all unique timestamps
         all_timestamps = set()
         for node_data in stats.values():
-            for t, _, _, _ in node_data:
+            for t, _, _, _, _ in node_data:
                 all_timestamps.add(t)
 
         sorted_times = sorted(all_timestamps)
@@ -308,19 +331,21 @@ def plot_chunk_statistics(rs_stats, rlnc_stats, output_file, node_count, num_chu
         aggregated_useful = []
         aggregated_useless = []
         aggregated_unused = []
+        aggregated_prevented = []
 
         for timestamp in sorted_times:
             useful_sum = 0
             useless_sum = 0
             unused_sum = 0
+            prevented_sum = 0
 
             for node_id in stats.keys():
                 node_data = stats[node_id]
                 # Find the closest timestamp <= current timestamp for this node
                 closest_value = None
-                for t, useful, useless, unused in node_data:
+                for t, useful, useless, unused, prevented in node_data:
                     if t <= timestamp:
-                        closest_value = (useful, useless, unused)
+                        closest_value = (useful, useless, unused, prevented)
                     else:
                         break
 
@@ -328,18 +353,21 @@ def plot_chunk_statistics(rs_stats, rlnc_stats, output_file, node_count, num_chu
                     useful_sum += closest_value[0]
                     useless_sum += closest_value[1]
                     unused_sum += closest_value[2]
+                    prevented_sum += closest_value[3]
 
             aggregated_useful.append(useful_sum)
             aggregated_useless.append(useless_sum)
             aggregated_unused.append(unused_sum)
+            aggregated_prevented.append(prevented_sum)
 
         # Divide by number of nodes to get average per node
         avg_useful = [u / node_count for u in aggregated_useful]
         avg_useless = [u / node_count for u in aggregated_useless]
         avg_unused = [u / node_count for u in aggregated_unused]
+        avg_prevented = [p / node_count for p in aggregated_prevented]
 
-        # Calculate max y value (total = useful + useless + unused)
-        max_total = max([useful + useless + unused for useful, useless, unused in zip(avg_useful, avg_useless, avg_unused)]) if avg_useful else 0
+        # Calculate max y value (total = useful + useless + unused + prevented)
+        max_total = max([useful + useless + unused + prevented for useful, useless, unused, prevented in zip(avg_useful, avg_useless, avg_unused, avg_prevented)]) if avg_useful else 0
         global_max_y = max(global_max_y, max_total)
 
         # Calculate x-axis range
@@ -352,7 +380,8 @@ def plot_chunk_statistics(rs_stats, rlnc_stats, output_file, node_count, num_chu
             'adjusted_times': adjusted_times,
             'avg_useful': avg_useful,
             'avg_useless': avg_useless,
-            'avg_unused': avg_unused
+            'avg_unused': avg_unused,
+            'avg_prevented': avg_prevented
         })
 
     # Second pass: plot with uniform y-axis
@@ -368,9 +397,10 @@ def plot_chunk_statistics(rs_stats, rlnc_stats, output_file, node_count, num_chu
         avg_useful = plot_data['avg_useful']
         avg_useless = plot_data['avg_useless']
         avg_unused = plot_data['avg_unused']
+        avg_prevented = plot_data['avg_prevented']
 
-        # Plot stacked area chart (useful + useless + unused)
-        # Use different shades: useful (darkest), useless (medium), unused (lightest)
+        # Plot stacked area chart (useful + useless + unused + prevented)
+        # Use different shades: useful (darkest), useless (medium), unused (lighter), prevented (lightest)
         ax.fill_between(adjusted_times, 0, avg_useful,
                        color=color, alpha=0.7, label='Useful')
         ax.fill_between(adjusted_times, avg_useful,
@@ -380,14 +410,20 @@ def plot_chunk_statistics(rs_stats, rlnc_stats, output_file, node_count, num_chu
                        [useful + useless for useful, useless in zip(avg_useful, avg_useless)],
                        [useful + useless + unused for useful, useless, unused in zip(avg_useful, avg_useless, avg_unused)],
                        color=color, alpha=0.3, label='Unused')
+        ax.fill_between(adjusted_times,
+                       [useful + useless + unused for useful, useless, unused in zip(avg_useful, avg_useless, avg_unused)],
+                       [useful + useless + unused + prevented for useful, useless, unused, prevented in zip(avg_useful, avg_useless, avg_unused, avg_prevented)],
+                       color='red', alpha=0.2, label='Prevented')
 
         # Add lines for clearer boundaries
         useful_line = ax.plot(adjusted_times, avg_useful,
                             linewidth=1.5, color=color, alpha=0.9)
         useless_line = ax.plot(adjusted_times, [useful + useless for useful, useless in zip(avg_useful, avg_useless)],
                             linewidth=1.5, color='orange', alpha=0.9)
-        total_line = ax.plot(adjusted_times, [useful + useless + unused for useful, useless, unused in zip(avg_useful, avg_useless, avg_unused)],
-                            linewidth=1.5, color=color, alpha=0.9, linestyle='--')
+        unused_line = ax.plot(adjusted_times, [useful + useless + unused for useful, useless, unused in zip(avg_useful, avg_useless, avg_unused)],
+                            linewidth=1.5, color=color, alpha=0.9)
+        total_line = ax.plot(adjusted_times, [useful + useless + unused + prevented for useful, useless, unused, prevented in zip(avg_useful, avg_useless, avg_unused, avg_prevented)],
+                            linewidth=1.5, color='red', alpha=0.9, linestyle='--')
 
         # Configure plot
         ax.set_title(f'{protocol_name}', fontsize=14, fontweight='bold')
@@ -402,11 +438,13 @@ def plot_chunk_statistics(rs_stats, rlnc_stats, output_file, node_count, num_chu
             Patch(facecolor=color, alpha=0.7, label='Useful chunks'),
             Patch(facecolor='orange', alpha=0.5, label='Useless chunks (stacked)'),
             Patch(facecolor=color, alpha=0.3, label='Unused chunks (stacked)'),
+            Patch(facecolor='red', alpha=0.2, label='Prevented chunks (stacked)'),
             Line2D([0], [0], color=color, linewidth=1.5, alpha=0.9, label='Useful count'),
             Line2D([0], [0], color='orange', linewidth=1.5, alpha=0.9, label='Useful+Useless count'),
-            Line2D([0], [0], color=color, linewidth=1.5, alpha=0.9, linestyle='--', label='Total count')
+            Line2D([0], [0], color=color, linewidth=1.5, alpha=0.9, label='Useful+Useless+Unused count'),
+            Line2D([0], [0], color='red', linewidth=1.5, alpha=0.9, linestyle='--', label='Total count (including prevented)')
         ]
-        ax.legend(handles=legend_elements, loc='upper left', fontsize=9, framealpha=0.9)
+        ax.legend(handles=legend_elements, loc='upper left', fontsize=8, framealpha=0.9)
 
         # Set x-axis and y-axis with same scale for both plots
         ax.set_xlim(left=min(0, global_min_x), right=global_max_x * 1.02)  # Add 2% padding at right
@@ -429,13 +467,15 @@ def plot_chunk_statistics(rs_stats, rlnc_stats, output_file, node_count, num_chu
         all_useful = []
         all_useless = []
         all_unused = []
+        all_prevented = []
         for node_data in stats.values():
             if node_data:
                 # Get final counts (last entry for each node)
-                _, final_useful, final_useless, final_unused = node_data[-1]
+                _, final_useful, final_useless, final_unused, final_prevented = node_data[-1]
                 all_useful.append(final_useful)
                 all_useless.append(final_useless)
                 all_unused.append(final_unused)
+                all_prevented.append(final_prevented)
 
         if all_useful:
             print(f"\n{protocol_name}:")
@@ -451,17 +491,26 @@ def plot_chunk_statistics(rs_stats, rlnc_stats, output_file, node_count, num_chu
             print(f"    Mean:       {np.mean(all_unused):.1f}")
             print(f"    Min:        {np.min(all_unused)}")
             print(f"    Max:        {np.max(all_unused)}")
-            total_chunks = sum(all_useful) + sum(all_useless) + sum(all_unused)
-            if total_chunks > 0:
-                useless_rate = sum(all_useless) / total_chunks * 100
-                unused_rate = sum(all_unused) / total_chunks * 100
-                print(f"  Useless rate: {useless_rate:.2f}%")
-                print(f"  Unused rate: {unused_rate:.2f}%")
+            print(f"  Prevented chunks (final):")
+            print(f"    Mean:       {np.mean(all_prevented):.1f}")
+            print(f"    Min:        {np.min(all_prevented)}")
+            print(f"    Max:        {np.max(all_prevented)}")
+            # Calculate total received chunks (not including prevented)
+            total_received = sum(all_useful) + sum(all_useless) + sum(all_unused)
+            # Calculate total that would have been sent (including prevented)
+            total_with_prevented = total_received + sum(all_prevented)
+            if total_with_prevented > 0:
+                useless_rate = sum(all_useless) / total_received * 100 if total_received > 0 else 0
+                unused_rate = sum(all_unused) / total_received * 100 if total_received > 0 else 0
+                prevented_rate = sum(all_prevented) / total_with_prevented * 100
+                print(f"  Useless rate: {useless_rate:.2f}% (of received chunks)")
+                print(f"  Unused rate: {unused_rate:.2f}% (of received chunks)")
+                print(f"  Prevented rate: {prevented_rate:.2f}% (of total that would have been sent)")
 
     print(f"{'='*60}\n")
 
 
-def plot_cdfs(gossipsub_latencies, rs_latencies, rlnc_latencies, output_file, msg_size, num_chunks, node_count, degree, multiplier):
+def plot_cdfs(gossipsub_latencies, rs_latencies, rlnc_latencies, output_file, msg_size, num_chunks, node_count, degree, multiplier, disable_completion_signal=False):
     """Plot CDF comparison of all three protocols."""
     plt.figure(figsize=(10, 6))
 
@@ -470,13 +519,16 @@ def plot_cdfs(gossipsub_latencies, rs_latencies, rlnc_latencies, output_file, ms
     rs_x, rs_y = compute_cdf(rs_latencies)
     rlnc_x, rlnc_y = compute_cdf(rlnc_latencies)
 
+    # Add "(no completion signal)" suffix only when disabled (not when enabled, since that's default)
+    signal_suffix = " (no completion signal)" if disable_completion_signal else ""
+
     # Plot CDFs
     # GossipSub as baseline (dashed line, neutral color)
     plt.plot(gs_x, gs_y, '--', linewidth=2.5, label='GossipSub (baseline, D=8)', color='gray', alpha=0.8)
 
     # RS and RLNC as improvements (solid lines, distinct colors, no markers)
-    plt.plot(rs_x, rs_y, '-', linewidth=2, label=f'RS(2k) (k={num_chunks}, D={multiplier}, routing=random)', color='#2E86AB')
-    plt.plot(rlnc_x, rlnc_y, '-', linewidth=2, label=f'RLNC(n=kD) (k={num_chunks}, D={multiplier}, routing=random)', color='#A23B72')
+    plt.plot(rs_x, rs_y, '-', linewidth=2, label=f'RS(2k) (k={num_chunks}, D={multiplier}, routing=random){signal_suffix}', color='#2E86AB')
+    plt.plot(rlnc_x, rlnc_y, '-', linewidth=2, label=f'RLNC(n=kD) (k={num_chunks}, D={multiplier}, routing=random){signal_suffix}', color='#A23B72')
 
     plt.xlabel('Message Arrival Latency (ms)', fontsize=12)
     plt.ylabel('CDF', fontsize=12)
@@ -565,6 +617,8 @@ Examples:
                         help='Output file for chunk statistics plot (default: protocol_chunk_statistics.png)')
     parser.add_argument('--skip-simulations', action='store_true',
                         help='Skip running simulations and use existing results for plotting')
+    parser.add_argument('--disable-completion-signal', action='store_true',
+                        help='Disable completion signals for RS and RLNC protocols (default: false, signals enabled)')
 
     args = parser.parse_args()
 
@@ -622,7 +676,8 @@ Chunk Stats:     {args.chunk_stats_output}
                 args.msg_count,
                 args.num_chunks if protocol in ['rs', 'rlnc'] else None,
                 args.multiplier if protocol in ['rs', 'rlnc'] else None,
-                args.log_level
+                args.log_level,
+                args.disable_completion_signal
             )
 
             if not success[protocol]:
@@ -669,7 +724,8 @@ Chunk Stats:     {args.chunk_stats_output}
 
     # Plot CDFs
     plot_cdfs(gossipsub_latencies, rs_latencies, rlnc_latencies,
-              args.output, args.msg_size, args.num_chunks, args.node_count, args.degree, args.multiplier)
+              args.output, args.msg_size, args.num_chunks, args.node_count, args.degree, args.multiplier,
+              args.disable_completion_signal)
 
     # Parse and plot chunk statistics for RS and RLNC
     print(f"\n{'='*60}")
@@ -684,7 +740,8 @@ Chunk Stats:     {args.chunk_stats_output}
 
     if rs_chunk_stats or rlnc_chunk_stats:
         plot_chunk_statistics(rs_chunk_stats, rlnc_chunk_stats,
-                            args.chunk_stats_output, args.node_count, args.num_chunks, args.multiplier)
+                            args.chunk_stats_output, args.node_count, args.num_chunks, args.multiplier,
+                            args.msg_size, args.degree, args.disable_completion_signal)
     else:
         print("\nWarning: No chunk statistics found in logs.")
 

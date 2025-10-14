@@ -10,6 +10,7 @@ NUM_CHUNKS ?= 8
 MULTIPLIER ?= 4
 PROGRESS ?= false
 LOG_LEVEL ?= info
+DISABLE_COMPLETION_SIGNAL ?= false
 
 # Check dependencies
 check-deps:
@@ -29,14 +30,22 @@ build: check-deps
 # Generate network graph and Shadow configuration
 generate-config: check-deps
 	@echo "Generating Shadow network configuration for $(NODE_COUNT) nodes (Reed-Solomon)..."
+ifeq ($(DISABLE_COMPLETION_SIGNAL),true)
+	python3 ../network_graph.py $(NODE_COUNT) $(MSG_SIZE) $(MSG_COUNT) rs "-num-chunks $(NUM_CHUNKS) -multiplier $(MULTIPLIER) --log-level $(LOG_LEVEL) --disable-completion-signal"
+else
 	python3 ../network_graph.py $(NODE_COUNT) $(MSG_SIZE) $(MSG_COUNT) rs "-num-chunks $(NUM_CHUNKS) -multiplier $(MULTIPLIER) --log-level $(LOG_LEVEL)"
+endif
 	@test -f shadow-rs.yaml && test -f graph.gml || (echo "Config generation failed" && exit 1)
 	@echo "Configuration generated"
 
 # Generate network graph and Shadow configuration for streams
 generate-config-streams: check-deps
 	@echo "Generating Shadow network configuration for $(NODE_COUNT) nodes (Reed-Solomon with streams)..."
+ifeq ($(DISABLE_COMPLETION_SIGNAL),true)
+	python3 ../network_graph.py $(NODE_COUNT) $(MSG_SIZE) $(MSG_COUNT) rs "-num-chunks $(NUM_CHUNKS) -multiplier $(MULTIPLIER) --use-streams --log-level $(LOG_LEVEL) --disable-completion-signal"
+else
 	python3 ../network_graph.py $(NODE_COUNT) $(MSG_SIZE) $(MSG_COUNT) rs "-num-chunks $(NUM_CHUNKS) -multiplier $(MULTIPLIER) --use-streams --log-level $(LOG_LEVEL)"
+endif
 	@test -f shadow-rs.yaml && test -f graph.gml || (echo "Config generation failed" && exit 1)
 	@echo "Configuration generated (with QUIC streams)"
 

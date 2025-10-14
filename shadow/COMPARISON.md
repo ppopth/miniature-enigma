@@ -57,6 +57,10 @@ python3 compare_protocols.py --msg-size 256 --num-chunks 8 -o results/comparison
 | `-o, --output` | No | protocol_comparison_cdf.png | Output file for CDF plot |
 | `--chunk-stats-output` | No | protocol_chunk_statistics.png | Output file for chunk statistics plot |
 | `--skip-simulations` | No | false | Skip running simulations, use existing results |
+| `--disable-completion-signal` | No | false | Disable completion signals for RS and RLNC protocols |
+
+**Note on Completion Signals:**
+By default, RS and RLNC simulations have completion signals enabled. When a node completes message reconstruction, it broadcasts a completion signal to peers, who then stop sending chunks for that message. This reduces unused chunk overhead. Use `--disable-completion-signal` to disable this feature and compare the impact on unused chunks. When disabled, chart labels will show "(no completion signal)" to indicate the configuration.
 
 ## How It Works
 
@@ -97,12 +101,14 @@ Shows the accumulation of useful, useless, and unused chunks over time for RS an
 **Stacked area chart layers:**
 - **Darkest area** (protocol color, alpha=0.7): Useful chunks
 - **Medium area** (orange, alpha=0.5): Useless chunks (stacked on useful)
-- **Lightest area** (protocol color, alpha=0.3): Unused chunks (stacked on useless)
+- **Light area** (protocol color, alpha=0.3): Unused chunks (stacked on useless)
+- **Lightest area** (red, alpha=0.2): Prevented chunks (stacked on unused)
 
 **Boundary lines:**
 - **Solid line** (protocol color): Useful chunk count
 - **Solid line** (orange): Useful + Useless chunk count
-- **Dashed line** (protocol color): Total chunk count (useful + useless + unused)
+- **Solid line** (protocol color): Useful + Useless + Unused chunk count
+- **Dashed line** (red): Total chunk count including prevented (useful + useless + unused + prevented)
 
 **Chunk Categories:**
 - **Useful chunks**: Chunks received BEFORE reconstruction is possible that contribute to reconstruction
@@ -116,6 +122,7 @@ Shows the accumulation of useful, useless, and unused chunks over time for RS an
 - **Unused chunks**: Any chunks (valid or invalid) received AFTER reconstruction is already possible
   - Arrived too late to be useful
   - Node already has enough chunks to reconstruct
+  - Reduced by completion signals: when a node completes reconstruction, it broadcasts a completion signal to peers, who then stop sending chunks for that message (enabled by default)
 
 ### Statistical Summary
 
@@ -169,8 +176,13 @@ RS(2k) (k=8, D=4, routing=random):
     Mean:       12.3
     Min:        8
     Max:        18
-  Useless rate: 10.87%
-  Unused rate: 53.48%
+  Prevented chunks (final):
+    Mean:       4.8
+    Min:        0
+    Max:        18
+  Useless rate: 10.87% (of received chunks)
+  Unused rate: 53.48% (of received chunks)
+  Prevented rate: 13.64% (of total that would have been sent)
 
 RLNC(n=kD) (k=8, D=4, routing=random):
   Useful chunks (final):
@@ -185,8 +197,13 @@ RLNC(n=kD) (k=8, D=4, routing=random):
     Mean:       15.8
     Min:        10
     Max:        22
-  Useless rate: 11.85%
-  Unused rate: 58.52%
+  Prevented chunks (final):
+    Mean:       0.0
+    Min:        0
+    Max:        0
+  Useless rate: 11.85% (of received chunks)
+  Unused rate: 58.52% (of received chunks)
+  Prevented rate: 0.00% (of total that would have been sent)
 ============================================================
 ```
 
@@ -234,10 +251,11 @@ python3 compare_protocols.py --msg-size 512 --num-chunks 16
 - RLNC useless chunks often come from linearly dependent combinations
 - RS useless chunks typically come from duplicates or invalid indices
 
-**Unused chunks** indicate latency:
-- High unused rate: Chunks continue arriving after reconstruction
-- Low unused rate: Reconstruction happens near the end of chunk reception
+**Unused chunks** indicate latency and completion signal effectiveness:
+- High unused rate: Chunks continue arriving after reconstruction (may indicate completion signals disabled or delayed)
+- Low unused rate: Reconstruction happens near the end of chunk reception, or completion signals are working effectively
 - Unused chunks represent network overhead after message is already usable
+- Completion signals (enabled by default) help reduce unused chunks by notifying peers when reconstruction is complete
 
 **Comparing protocols:**
 - Lower useless rate = More efficient chunk verification

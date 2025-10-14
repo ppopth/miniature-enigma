@@ -173,6 +173,7 @@ Use the `compare_protocols.py` script to compare protocols across multiple metri
 - **Useful chunks**: Received before reconstruction possible (linearly independent/valid)
 - **Useless chunks**: Invalid/duplicate/dependent chunks before reconstruction
 - **Unused chunks**: Any chunks received after reconstruction already possible
+  - Reduced by completion signals (enabled by default, configurable via `DisableCompletionSignal`)
 
 **Example usage:**
 ```bash

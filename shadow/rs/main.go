@@ -22,15 +22,16 @@ import (
 
 func main() {
 	var (
-		nodeID       = flag.Int("node-id", 0, "Node ID for this simulation instance")
-		nodeCount    = flag.Int("node-count", 10, "Total number of nodes in simulation")
-		msgCount     = flag.Int("msg-count", 5, "Number of messages to publish")
-		msgSize      = flag.Int("msg-size", 32, "Size of each message in bytes")
-		numChunks    = flag.Int("num-chunks", 4, "Number of chunks to divide each message into")
-		multiplier   = flag.Int("multiplier", 4, "Multiplier for publish, forward, and min emit count")
-		topologyFile = flag.String("topology-file", "", "Path to topology JSON file (if not specified, uses linear topology)")
-		useStreams   = flag.Bool("use-streams", false, "Use QUIC streams instead of datagrams")
-		logLevel     = flag.String("log-level", "info", "Log level (debug, info, warn, error)")
+		nodeID                  = flag.Int("node-id", 0, "Node ID for this simulation instance")
+		nodeCount               = flag.Int("node-count", 10, "Total number of nodes in simulation")
+		msgCount                = flag.Int("msg-count", 5, "Number of messages to publish")
+		msgSize                 = flag.Int("msg-size", 32, "Size of each message in bytes")
+		numChunks               = flag.Int("num-chunks", 4, "Number of chunks to divide each message into")
+		multiplier              = flag.Int("multiplier", 4, "Multiplier for publish, forward, and min emit count")
+		topologyFile            = flag.String("topology-file", "", "Path to topology JSON file (if not specified, uses linear topology)")
+		useStreams              = flag.Bool("use-streams", false, "Use QUIC streams instead of datagrams")
+		logLevel                = flag.String("log-level", "info", "Log level (debug, info, warn, error)")
+		disableCompletionSignal = flag.Bool("disable-completion-signal", false, "Disable completion signals (default: false, signals enabled)")
 	)
 	flag.Parse()
 
@@ -156,8 +157,9 @@ func main() {
 
 	// Create EC router with Reed-Solomon
 	router, err := ec.NewEcRouter(encoder, ec.WithEcParams(ec.EcParams{
-		PublishMultiplier: effectiveMultiplier,
-		ForwardMultiplier: effectiveMultiplier,
+		PublishMultiplier:       effectiveMultiplier,
+		ForwardMultiplier:       effectiveMultiplier,
+		DisableCompletionSignal: *disableCompletionSignal,
 	}))
 	if err != nil {
 		log.Fatalf("Failed to create EC router: %v", err)
