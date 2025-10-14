@@ -48,7 +48,7 @@ func NewEcRouter(encoder encode.Encoder, opts ...EcOption) (*EcRouter, error) {
 	// Set reasonable defaults for router-specific parameters
 	router.params = EcParams{
 		PublishMultiplier: 2, // Send 2x redundancy when publishing
-		ForwardMultiplier: 2, // Forward 2 chunks per useful chunk received
+		ForwardMultiplier: 2, // Forward 2 chunks per innovative chunk received
 	}
 
 	for _, opt := range opts {
@@ -103,7 +103,7 @@ type EcParams struct {
 	// the multiplier is 2 and the number of chunks of the published message is 8, there will
 	// be 2*8 = 16 chunks sent in total.
 	PublishMultiplier int
-	// Every time a new useful chunk is receive, we send out as many new chunks as this number.
+	// Every time a new innovative chunk is receive, we send out as many new chunks as this number.
 	ForwardMultiplier int
 }
 
@@ -313,7 +313,7 @@ func (router *EcRouter) HandleIncomingRPC(peerID peer.ID, topicRPC *pb.TopicRpc)
 
 		log.Debugf("Valid chunk accepted for message %s from peer %s", messageID[:8], peerID.String()[:8])
 
-		// Useful chunk! Forward it to help network propagation
+		// Innovative chunk! Forward it to help network propagation
 		messagesToSend[messageID] += router.params.ForwardMultiplier
 		// Check if we have enough chunks to reconstruct the message
 		if router.encoder.GetChunkCount(messageID) >= router.encoder.GetMinChunksForReconstruction(messageID) {

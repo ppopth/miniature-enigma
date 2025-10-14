@@ -163,7 +163,24 @@ The simulation will run with:
 
 ## Protocol Performance Comparison
 
-To compare message arrival time performance across GossipSub, Reed-Solomon, and RLNC protocols, see [COMPARISON.md](COMPARISON.md) for the `compare_protocols.py` script.
+Use the `compare_protocols.py` script to compare protocols across multiple metrics:
+
+**Two plots generated:**
+1. **CDF Plot**: Message arrival time distribution across GossipSub, Reed-Solomon, and RLNC
+2. **Chunk Statistics Plot**: Useful/useless/unused chunk accumulation for RS and RLNC
+
+**Chunk categories tracked:**
+- **Useful chunks**: Received before reconstruction possible (linearly independent/valid)
+- **Useless chunks**: Invalid/duplicate/dependent chunks before reconstruction
+- **Unused chunks**: Any chunks received after reconstruction already possible
+
+**Example usage:**
+```bash
+cd shadow
+python3 compare_protocols.py --msg-size 256 --num-chunks 8
+```
+
+See [COMPARISON.md](COMPARISON.md) for detailed documentation, interpretation guide, and all command-line options.
 
 ## Comprehensive Testing
 

@@ -151,9 +151,49 @@ The Reed-Solomon implementation provides systematic MDS codes with predictable c
 - **ElementsPerChunk**: Number of field elements per chunk
 - **Systematic encoding**: First k chunks are original data, remaining are parity chunks
 
+### Chunk Statistics Tracking
+
+Both RLNC and Reed-Solomon encoders track chunk statistics in three categories:
+
+- **Useful chunks**: Chunks received BEFORE reconstruction is possible that contribute to reconstruction
+  - RLNC: Linearly independent chunks
+  - RS: Valid, non-duplicate chunks with valid indices
+  - These chunks help the node reconstruct the message
+
+- **Useless chunks**: Chunks received BEFORE reconstruction is possible that do NOT contribute
+  - Duplicate chunks
+  - Linearly dependent chunks (RLNC)
+  - Invalid chunk indices (RS)
+  - Verification failures
+  - These chunks waste bandwidth but arrive when still trying to reconstruct
+
+- **Unused chunks**: Any chunks (valid or invalid) received AFTER reconstruction is already possible
+  - Chunks that arrive too late
+  - Node already has enough chunks to reconstruct the message
+  - Represent network overhead after message is usable
+
+**Statistics are logged on each chunk event:**
+```
+Chunk event: Useful: X, Useless: Y, Unused: Z
+```
+
+**Implementation details:**
+- Counters are incremented atomically with mutex protection
+- Statistics are used in Shadow simulations for protocol comparison
+- Helps tune redundancy parameters (PublishMultiplier, ForwardMultiplier)
+- The comparison script (`shadow/compare_protocols.py`) visualizes these statistics
+
 ### Verification System
 The codebase includes a pluggable chunk verification system in `ec/encode/rlnc/verify/` that allows applications to insert custom validation logic for message chunks. Current implementations include:
 - **Pedersen commitments**: Cryptographic verification using Ristretto255 group operations
+
+**Verification Order (RLNC):**
+1. Type assertion check (no counter increment)
+2. Linear independence check
+3. Verifier check (moved here for efficiency)
+4. Store chunk if all checks pass
+
+This ordering ensures expensive verification only runs on linearly independent chunks.
 
 ### Connection Management
 The host layer handles peer connections through QUIC with automatic peer discovery via TLS certificate validation and peer ID derivation.

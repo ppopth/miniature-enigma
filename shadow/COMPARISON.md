@@ -51,9 +51,12 @@ python3 compare_protocols.py --msg-size 256 --num-chunks 8 -o results/comparison
 | `--num-chunks` | Yes | - | Number of chunks for RS and RLNC |
 | `--node-count` | No | 10 | Number of nodes in simulation |
 | `--msg-count` | No | 1 | Number of messages to send |
+| `--multiplier` | No | 4 | Multiplier for publish and forward (default: 4) |
 | `--degree` | No | 3 | Node degree for random regular topology |
 | `--log-level` | No | info | Log level: debug, info, warn, error |
 | `-o, --output` | No | protocol_comparison_cdf.png | Output file for CDF plot |
+| `--chunk-stats-output` | No | protocol_chunk_statistics.png | Output file for chunk statistics plot |
+| `--skip-simulations` | No | false | Skip running simulations, use existing results |
 
 ## How It Works
 
@@ -70,15 +73,49 @@ All simulations use a random regular graph topology where each node has the same
 
 ## Output
 
-### CDF Plot
+The script generates **two plots**:
 
-The script generates a CDF plot comparing message arrival latencies:
+### 1. CDF Plot (Message Arrival Times)
+
+Compares message arrival latencies across protocols:
 
 - **X-axis**: Message arrival latency (milliseconds)
 - **Y-axis**: Cumulative probability (0-1)
 - **GossipSub**: Dashed gray line (baseline)
-- **Reed-Solomon**: Solid blue line with circle markers
-- **RLNC**: Solid purple line with square markers
+- **Reed-Solomon**: Solid blue line
+- **RLNC**: Solid purple line
+
+### 2. Chunk Statistics Plot
+
+Shows the accumulation of useful, useless, and unused chunks over time for RS and RLNC protocols:
+
+- **Left panel**: Reed-Solomon chunk statistics (average per node)
+- **Right panel**: RLNC chunk statistics (average per node)
+- **X-axis**: Time in milliseconds since publish
+- **Y-axis**: Chunk count (average per node)
+
+**Stacked area chart layers:**
+- **Darkest area** (protocol color, alpha=0.7): Useful chunks
+- **Medium area** (orange, alpha=0.5): Useless chunks (stacked on useful)
+- **Lightest area** (protocol color, alpha=0.3): Unused chunks (stacked on useless)
+
+**Boundary lines:**
+- **Solid line** (protocol color): Useful chunk count
+- **Solid line** (orange): Useful + Useless chunk count
+- **Dashed line** (protocol color): Total chunk count (useful + useless + unused)
+
+**Chunk Categories:**
+- **Useful chunks**: Chunks received BEFORE reconstruction is possible that contribute to reconstruction
+  - RLNC: Linearly independent chunks
+  - RS: Valid, non-duplicate chunks
+- **Useless chunks**: Chunks received BEFORE reconstruction is possible that do NOT contribute
+  - Duplicate chunks
+  - Linearly dependent chunks (RLNC)
+  - Verification failures
+  - Invalid chunks
+- **Unused chunks**: Any chunks (valid or invalid) received AFTER reconstruction is already possible
+  - Arrived too late to be useful
+  - Node already has enough chunks to reconstruct
 
 ### Statistical Summary
 
@@ -115,6 +152,42 @@ RLNC:
   Min:        4.80 ms
   Max:        92.30 ms
 ============================================================
+
+Chunk Statistics Summary
+============================================================
+
+RS(2k) (k=8, D=4, routing=random):
+  Useful chunks (final):
+    Mean:       8.2
+    Min:        8
+    Max:        9
+  Useless chunks (final):
+    Mean:       2.5
+    Min:        0
+    Max:        5
+  Unused chunks (final):
+    Mean:       12.3
+    Min:        8
+    Max:        18
+  Useless rate: 10.87%
+  Unused rate: 53.48%
+
+RLNC(n=kD) (k=8, D=4, routing=random):
+  Useful chunks (final):
+    Mean:       8.0
+    Min:        8
+    Max:        8
+  Useless chunks (final):
+    Mean:       3.2
+    Min:        1
+    Max:        6
+  Unused chunks (final):
+    Mean:       15.8
+    Min:        10
+    Max:        22
+  Useless rate: 11.85%
+  Unused rate: 58.52%
+============================================================
 ```
 
 ## Example Workflow
@@ -148,6 +221,28 @@ python3 compare_protocols.py --msg-size 512 --num-chunks 16
 - If RS/RLNC curves are **left** of GossipSub: Improvement in latency
 - If RS/RLNC curves are **right** of GossipSub: Degradation in latency
 - Compare P95/P99 values to assess tail latency improvements
+
+### Chunk Statistics Interpretation
+
+**Useful chunks** indicate efficiency:
+- Mean close to `k` (number of chunks needed): Protocol is efficient
+- Mean significantly above `k`: Protocol requires extra chunks to reconstruct
+
+**Useless chunks** indicate waste:
+- Low useless rate (< 10%): Good chunk validation and minimal duplicates
+- High useless rate (> 20%): Many duplicates or verification failures
+- RLNC useless chunks often come from linearly dependent combinations
+- RS useless chunks typically come from duplicates or invalid indices
+
+**Unused chunks** indicate latency:
+- High unused rate: Chunks continue arriving after reconstruction
+- Low unused rate: Reconstruction happens near the end of chunk reception
+- Unused chunks represent network overhead after message is already usable
+
+**Comparing protocols:**
+- Lower useless rate = More efficient chunk verification
+- Lower unused rate = Better timing/redundancy tuning
+- Higher useful chunks mean = Protocol needs more chunks for reconstruction
 
 ## Troubleshooting
 

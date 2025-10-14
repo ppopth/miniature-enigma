@@ -202,7 +202,7 @@ def parse_chunk_statistics(protocol, node_count):
     """
     Parse chunk statistics from Shadow logs.
 
-    Returns a dict: {node_id: [(timestamp_ns, useful_chunks, unused_chunks)]}
+    Returns a dict: {node_id: [(timestamp_ns, useful_chunks, useless_chunks, unused_chunks)]}
     """
     log_dir = f"{protocol}/shadow.data/hosts"
 
@@ -210,7 +210,7 @@ def parse_chunk_statistics(protocol, node_count):
         print(f"Warning: Log directory not found: {log_dir}")
         return {}
 
-    # Store chunk stats: node_id -> [(time, useful, unused)]
+    # Store chunk stats: node_id -> [(time, useful, useless, unused)]
     node_stats = defaultdict(list)
 
     # Parse logs for each node
@@ -231,7 +231,7 @@ def parse_chunk_statistics(protocol, node_count):
 
         with open(log_file, 'r') as f:
             for line in f:
-                # Look for chunk event logs: "Chunk event: Useful: X, Unused: Y"
+                # Look for chunk event logs: "Chunk event: Useful: X, Useless: Y, Unused: Z"
                 if "Chunk event:" in line:
                     # Extract timestamp - ISO 8601 format: 2000-01-01T00:02:00.002Z
                     timestamp_match = re.search(r'(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})\.(\d{3})', line)
@@ -244,14 +244,16 @@ def parse_chunk_statistics(protocol, node_count):
                     millisecond = int(timestamp_match.group(7))
                     timestamp_ns = (hour * 3600 + minute * 60 + second) * 1_000_000_000 + millisecond * 1_000_000
 
-                    # Extract useful and unused chunks
+                    # Extract useful, useless, and unused chunks
                     useful_match = re.search(r'Useful: (\d+)', line)
+                    useless_match = re.search(r'Useless: (\d+)', line)
                     unused_match = re.search(r'Unused: (\d+)', line)
 
-                    if useful_match and unused_match:
+                    if useful_match and useless_match and unused_match:
                         useful_chunks = int(useful_match.group(1))
+                        useless_chunks = int(useless_match.group(1))
                         unused_chunks = int(unused_match.group(1))
-                        node_stats[node_id].append((timestamp_ns, useful_chunks, unused_chunks))
+                        node_stats[node_id].append((timestamp_ns, useful_chunks, useless_chunks, unused_chunks))
 
     return node_stats
 
@@ -267,7 +269,7 @@ def compute_cdf(data):
 
 
 def plot_chunk_statistics(rs_stats, rlnc_stats, output_file, node_count, num_chunks, multiplier):
-    """Plot time series of useful and unused chunks for RS and RLNC protocols."""
+    """Plot time series of useful, useless, and unused chunks for RS and RLNC protocols."""
     fig, axes = plt.subplots(1, 2, figsize=(16, 6))
     fig.suptitle('Chunk Statistics Over Time (Average Per Node)', fontsize=16, fontweight='bold')
 
@@ -291,7 +293,7 @@ def plot_chunk_statistics(rs_stats, rlnc_stats, output_file, node_count, num_chu
         # First, collect all unique timestamps
         all_timestamps = set()
         for node_data in stats.values():
-            for t, _, _ in node_data:
+            for t, _, _, _ in node_data:
                 all_timestamps.add(t)
 
         sorted_times = sorted(all_timestamps)
@@ -304,35 +306,40 @@ def plot_chunk_statistics(rs_stats, rlnc_stats, output_file, node_count, num_chu
 
         # For each timestamp, sum the values across all nodes
         aggregated_useful = []
+        aggregated_useless = []
         aggregated_unused = []
 
         for timestamp in sorted_times:
             useful_sum = 0
+            useless_sum = 0
             unused_sum = 0
 
             for node_id in stats.keys():
                 node_data = stats[node_id]
                 # Find the closest timestamp <= current timestamp for this node
                 closest_value = None
-                for t, useful, unused in node_data:
+                for t, useful, useless, unused in node_data:
                     if t <= timestamp:
-                        closest_value = (useful, unused)
+                        closest_value = (useful, useless, unused)
                     else:
                         break
 
                 if closest_value:
                     useful_sum += closest_value[0]
-                    unused_sum += closest_value[1]
+                    useless_sum += closest_value[1]
+                    unused_sum += closest_value[2]
 
             aggregated_useful.append(useful_sum)
+            aggregated_useless.append(useless_sum)
             aggregated_unused.append(unused_sum)
 
         # Divide by number of nodes to get average per node
         avg_useful = [u / node_count for u in aggregated_useful]
+        avg_useless = [u / node_count for u in aggregated_useless]
         avg_unused = [u / node_count for u in aggregated_unused]
 
-        # Calculate max y value (total = useful + unused)
-        max_total = max([useful + unused for useful, unused in zip(avg_useful, avg_unused)]) if avg_useful else 0
+        # Calculate max y value (total = useful + useless + unused)
+        max_total = max([useful + useless + unused for useful, useless, unused in zip(avg_useful, avg_useless, avg_unused)]) if avg_useful else 0
         global_max_y = max(global_max_y, max_total)
 
         # Calculate x-axis range
@@ -344,6 +351,7 @@ def plot_chunk_statistics(rs_stats, rlnc_stats, output_file, node_count, num_chu
         all_plot_data.append({
             'adjusted_times': adjusted_times,
             'avg_useful': avg_useful,
+            'avg_useless': avg_useless,
             'avg_unused': avg_unused
         })
 
@@ -358,21 +366,28 @@ def plot_chunk_statistics(rs_stats, rlnc_stats, output_file, node_count, num_chu
 
         adjusted_times = plot_data['adjusted_times']
         avg_useful = plot_data['avg_useful']
+        avg_useless = plot_data['avg_useless']
         avg_unused = plot_data['avg_unused']
 
-        # Plot stacked area chart (useful + unused)
-        # Use different shades of the same color for useful (darker) and unused (lighter)
+        # Plot stacked area chart (useful + useless + unused)
+        # Use different shades: useful (darkest), useless (medium), unused (lightest)
         ax.fill_between(adjusted_times, 0, avg_useful,
                        color=color, alpha=0.7, label='Useful')
         ax.fill_between(adjusted_times, avg_useful,
-                       [useful + unused for useful, unused in zip(avg_useful, avg_unused)],
+                       [useful + useless for useful, useless in zip(avg_useful, avg_useless)],
+                       color='orange', alpha=0.5, label='Useless')
+        ax.fill_between(adjusted_times,
+                       [useful + useless for useful, useless in zip(avg_useful, avg_useless)],
+                       [useful + useless + unused for useful, useless, unused in zip(avg_useful, avg_useless, avg_unused)],
                        color=color, alpha=0.3, label='Unused')
 
         # Add lines for clearer boundaries
         useful_line = ax.plot(adjusted_times, avg_useful,
-                            linewidth=1.5, color=color, alpha=0.9, label='Useful (line)')
-        total_line = ax.plot(adjusted_times, [useful + unused for useful, unused in zip(avg_useful, avg_unused)],
-                            linewidth=1.5, color=color, alpha=0.9, linestyle='--', label='Total (line)')
+                            linewidth=1.5, color=color, alpha=0.9)
+        useless_line = ax.plot(adjusted_times, [useful + useless for useful, useless in zip(avg_useful, avg_useless)],
+                            linewidth=1.5, color='orange', alpha=0.9)
+        total_line = ax.plot(adjusted_times, [useful + useless + unused for useful, useless, unused in zip(avg_useful, avg_useless, avg_unused)],
+                            linewidth=1.5, color=color, alpha=0.9, linestyle='--')
 
         # Configure plot
         ax.set_title(f'{protocol_name}', fontsize=14, fontweight='bold')
@@ -385,11 +400,13 @@ def plot_chunk_statistics(rs_stats, rlnc_stats, output_file, node_count, num_chu
         from matplotlib.lines import Line2D
         legend_elements = [
             Patch(facecolor=color, alpha=0.7, label='Useful chunks'),
+            Patch(facecolor='orange', alpha=0.5, label='Useless chunks (stacked)'),
             Patch(facecolor=color, alpha=0.3, label='Unused chunks (stacked)'),
             Line2D([0], [0], color=color, linewidth=1.5, alpha=0.9, label='Useful count'),
+            Line2D([0], [0], color='orange', linewidth=1.5, alpha=0.9, label='Useful+Useless count'),
             Line2D([0], [0], color=color, linewidth=1.5, alpha=0.9, linestyle='--', label='Total count')
         ]
-        ax.legend(handles=legend_elements, loc='upper left', fontsize=10, framealpha=0.9)
+        ax.legend(handles=legend_elements, loc='upper left', fontsize=9, framealpha=0.9)
 
         # Set x-axis and y-axis with same scale for both plots
         ax.set_xlim(left=min(0, global_min_x), right=global_max_x * 1.02)  # Add 2% padding at right
@@ -410,12 +427,14 @@ def plot_chunk_statistics(rs_stats, rlnc_stats, output_file, node_count, num_chu
             continue
 
         all_useful = []
+        all_useless = []
         all_unused = []
         for node_data in stats.values():
             if node_data:
                 # Get final counts (last entry for each node)
-                _, final_useful, final_unused = node_data[-1]
+                _, final_useful, final_useless, final_unused = node_data[-1]
                 all_useful.append(final_useful)
+                all_useless.append(final_useless)
                 all_unused.append(final_unused)
 
         if all_useful:
@@ -424,12 +443,19 @@ def plot_chunk_statistics(rs_stats, rlnc_stats, output_file, node_count, num_chu
             print(f"    Mean:       {np.mean(all_useful):.1f}")
             print(f"    Min:        {np.min(all_useful)}")
             print(f"    Max:        {np.max(all_useful)}")
+            print(f"  Useless chunks (final):")
+            print(f"    Mean:       {np.mean(all_useless):.1f}")
+            print(f"    Min:        {np.min(all_useless)}")
+            print(f"    Max:        {np.max(all_useless)}")
             print(f"  Unused chunks (final):")
             print(f"    Mean:       {np.mean(all_unused):.1f}")
             print(f"    Min:        {np.min(all_unused)}")
             print(f"    Max:        {np.max(all_unused)}")
-            if sum(all_useful) > 0:
-                unused_rate = sum(all_unused) / (sum(all_useful) + sum(all_unused)) * 100
+            total_chunks = sum(all_useful) + sum(all_useless) + sum(all_unused)
+            if total_chunks > 0:
+                useless_rate = sum(all_useless) / total_chunks * 100
+                unused_rate = sum(all_unused) / total_chunks * 100
+                print(f"  Useless rate: {useless_rate:.2f}%")
                 print(f"  Unused rate: {unused_rate:.2f}%")
 
     print(f"{'='*60}\n")
@@ -674,21 +700,29 @@ if __name__ == '__main__':
 #
 # The script now generates two plots:
 # 1. CDF of message arrival times (existing functionality)
-# 2. Stacked area chart of useful/unused chunks averaged across all nodes (new feature)
+# 2. Stacked area chart of useful/useless/unused chunks averaged across all nodes (new feature)
 #
 # The chunk statistics plot shows (1 row, 2 columns):
 # - Left: Reed-Solomon stacked area chart
 # - Right: RLNC stacked area chart
 #
 # Each chart contains:
-# - Darker shaded area: Average useful chunks per node (alpha=0.7)
-# - Lighter shaded area: Average unused chunks per node stacked on top (alpha=0.3)
-# - Solid line: Average useful chunk count per node
-# - Dashed line: Average total chunk count per node (useful + unused)
-# - Legend showing all four elements
+# - Darkest shaded area: Average useful chunks per node (protocol color, alpha=0.7)
+# - Medium shaded area: Average useless chunks per node stacked on top (orange, alpha=0.5)
+# - Lightest shaded area: Average unused chunks per node stacked on top (protocol color, alpha=0.3)
+# - Solid line (protocol color): Average useful chunk count per node
+# - Solid line (orange): Average useful+useless chunk count per node
+# - Dashed line (protocol color): Average total chunk count per node (useful + useless + unused)
+# - Legend showing all six elements
+#
+# Chunk semantics:
+# - Useful chunks: Chunks received BEFORE reconstruction is possible (linearly independent for RLNC, valid for RS)
+# - Useless chunks: Invalid/duplicate/failed chunks received BEFORE reconstruction is possible
+# - Unused chunks: Any chunks (valid or invalid) received AFTER reconstruction is already possible
 #
 # This allows you to visualize:
-# - Average accumulation of useful and unused chunks per node
-# - Proportion of unused to useful chunks at any point in time
-# - Average rate of unused chunks (duplicates, linearly dependent, post-reconstruction)
+# - Average accumulation of useful, useless, and unused chunks per node
+# - Proportion of each chunk type at any point in time
+# - Average rate of useless chunks (duplicates, linearly dependent, verification failures before reconstruction)
+# - Average rate of unused chunks (all chunks after reconstruction is possible)
 # - Side-by-side comparison of RS vs RLNC chunk efficiency
