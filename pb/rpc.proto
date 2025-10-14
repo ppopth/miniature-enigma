@@ -23,6 +23,7 @@ message TopicRpc {
 
 message EcRpc {
     repeated Chunk chunks = 1;
+    repeated string completedMessages = 2; // Message IDs that this peer has completed reconstruction for
 
     message Chunk {
         optional string messageID = 1;

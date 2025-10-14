@@ -838,3 +838,273 @@ func TestRsPublishWithPrimeField(t *testing.T) {
 		}
 	}
 }
+
+// TestCompletionSignalTracking tests that completion signals are properly tracked
+func TestCompletionSignalTracking(t *testing.T) {
+	hosts := getHosts(t, 3)
+	psubs := getPubsubs(t, hosts)
+
+	var topics []*pubsub.Topic
+	var subs []*pubsub.Subscription
+	var routers []*EcRouter
+
+	for _, ps := range psubs {
+		f := field.NewPrimeField(big.NewInt(4_294_967_311))
+
+		rlncConfig := &rlnc.RlncEncoderConfig{
+			MessageChunkSize:   8,
+			NetworkChunkSize:   9,
+			ElementsPerChunk:   2,
+			MaxCoefficientBits: 16,
+			Field:              f,
+		}
+		encoder, err := rlnc.NewRlncEncoder(rlncConfig)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		c, err := NewEcRouter(encoder,
+			WithEcParams(EcParams{
+				PublishMultiplier: 4,
+				ForwardMultiplier: 2,
+			}),
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		tp, err := ps.Join("foobar", c)
+		if err != nil {
+			t.Fatal(err)
+		}
+		sub, err := tp.Subscribe()
+		if err != nil {
+			t.Fatal(err)
+		}
+		topics = append(topics, tp)
+		subs = append(subs, sub)
+		routers = append(routers, c)
+	}
+
+	// Connect all hosts in a star topology (0 is hub)
+	for _, h := range hosts[1:] {
+		if err := hosts[0].Connect(context.Background(), h.LocalAddr()); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	time.Sleep(200 * time.Millisecond)
+
+	// Publish a message from node 0 (must be multiple of 8 bytes for chunk size)
+	msg := []byte("completion-signal-test-message!!")
+	mid := hashSha256(msg)
+	if err := topics[0].Publish(msg); err != nil {
+		t.Fatal(err)
+	}
+
+	// Wait for all nodes to receive and reconstruct
+	time.Sleep(500 * time.Millisecond)
+
+	// Verify that node 0 has tracked completion signals from nodes 1 and 2
+	routers[0].mutex.Lock()
+	peer1 := hosts[1].ID()
+	peer2 := hosts[2].ID()
+
+	// Check if peer 1's completion is tracked
+	if _, completed := routers[0].peerCompletedMessages[peer1][mid]; !completed {
+		t.Fatalf("node 0 should have tracked completion signal from peer 1")
+	}
+
+	// Check if peer 2's completion is tracked
+	if _, completed := routers[0].peerCompletedMessages[peer2][mid]; !completed {
+		t.Fatalf("node 0 should have tracked completion signal from peer 2")
+	}
+	routers[0].mutex.Unlock()
+}
+
+// TestCompletionSignalPreventsChunkSending tests that chunks are not sent to completed peers
+func TestCompletionSignalPreventsChunkSending(t *testing.T) {
+	hosts := getHosts(t, 4)
+	psubs := getPubsubs(t, hosts)
+
+	var topics []*pubsub.Topic
+	var subs []*pubsub.Subscription
+	var routers []*EcRouter
+
+	for _, ps := range psubs {
+		f := field.NewPrimeField(big.NewInt(4_294_967_311))
+
+		rlncConfig := &rlnc.RlncEncoderConfig{
+			MessageChunkSize:   8,
+			NetworkChunkSize:   9,
+			ElementsPerChunk:   2,
+			MaxCoefficientBits: 16,
+			Field:              f,
+		}
+		encoder, err := rlnc.NewRlncEncoder(rlncConfig)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		c, err := NewEcRouter(encoder,
+			WithEcParams(EcParams{
+				PublishMultiplier: 1,
+				ForwardMultiplier: 20, // Very high forward multiplier for prolonged forwarding
+			}),
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		tp, err := ps.Join("foobar", c)
+		if err != nil {
+			t.Fatal(err)
+		}
+		sub, err := tp.Subscribe()
+		if err != nil {
+			t.Fatal(err)
+		}
+		topics = append(topics, tp)
+		subs = append(subs, sub)
+		routers = append(routers, c)
+	}
+
+	// Connect in star topology: 0 is hub, 1/2/3 are spokes
+	for _, h := range hosts[1:] {
+		if err := hosts[0].Connect(context.Background(), h.LocalAddr()); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	time.Sleep(200 * time.Millisecond)
+
+	// Get peer IDs
+	peer2 := hosts[2].ID()
+
+	// Publish a longer message from node 1 (spoke) - must be multiple of 8 bytes
+	// Using 64 bytes = 8 chunks to have more room for forwarding differences
+	msg := []byte("test-completion-prevents-sending-with-longer-message-for-testing")
+	mid := hashSha256(msg)
+
+	// Mark node 2 as completed BEFORE publishing
+	// This ensures it gets completion flag before any forwarding happens
+	routers[0].mutex.Lock()
+	routers[0].peerCompletedMessages[peer2][mid] = struct{}{}
+	routers[0].mutex.Unlock()
+
+	if err := topics[1].Publish(msg); err != nil {
+		t.Fatal(err)
+	}
+
+	// Wait for message propagation to complete
+	time.Sleep(600 * time.Millisecond)
+
+	// Check chunk counts
+	// In a star topology, only the hub forwards chunks to spokes
+	// Node 3 should have received forwarded chunks (not marked as completed)
+	// Node 2 should have received ZERO chunks (marked as completed, so hub skipped it)
+	chunkCountNode2 := routers[2].encoder.GetChunkCount(mid)
+	chunkCountNode3 := routers[3].encoder.GetChunkCount(mid)
+
+	// Node 3 should have received chunks since it wasn't marked as completed
+	if chunkCountNode3 == 0 {
+		t.Fatal("node 3 should have received chunks (not marked as completed)")
+	}
+
+	// Node 2 should have received ZERO chunks
+	// Since we marked it as completed before publishing, the hub should not forward to it
+	// In a star topology, node 2 has no other way to receive chunks
+	if chunkCountNode2 != 0 {
+		t.Fatalf("node 2 (marked completed) should have received zero chunks; got %d",
+			chunkCountNode2)
+	}
+
+	// Verify the completion signal is still set
+	routers[0].mutex.Lock()
+	if _, completed := routers[0].peerCompletedMessages[peer2][mid]; !completed {
+		t.Fatal("node 2 should still be marked as completed in hub's tracking map")
+	}
+	routers[0].mutex.Unlock()
+}
+
+// TestDisableCompletionSignal tests that completion signals can be disabled
+func TestDisableCompletionSignal(t *testing.T) {
+	hosts := getHosts(t, 3)
+	psubs := getPubsubs(t, hosts)
+
+	var topics []*pubsub.Topic
+	var subs []*pubsub.Subscription
+	var routers []*EcRouter
+
+	for _, ps := range psubs {
+		f := field.NewPrimeField(big.NewInt(4_294_967_311))
+
+		rlncConfig := &rlnc.RlncEncoderConfig{
+			MessageChunkSize:   8,
+			NetworkChunkSize:   9,
+			ElementsPerChunk:   2,
+			MaxCoefficientBits: 16,
+			Field:              f,
+		}
+		encoder, err := rlnc.NewRlncEncoder(rlncConfig)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		c, err := NewEcRouter(encoder,
+			WithEcParams(EcParams{
+				PublishMultiplier:       4,
+				ForwardMultiplier:       2,
+				DisableCompletionSignal: true, // Disable completion signals
+			}),
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		tp, err := ps.Join("foobar", c)
+		if err != nil {
+			t.Fatal(err)
+		}
+		sub, err := tp.Subscribe()
+		if err != nil {
+			t.Fatal(err)
+		}
+		topics = append(topics, tp)
+		subs = append(subs, sub)
+		routers = append(routers, c)
+	}
+
+	// Connect all hosts in a star topology (0 is hub)
+	for _, h := range hosts[1:] {
+		if err := hosts[0].Connect(context.Background(), h.LocalAddr()); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	time.Sleep(200 * time.Millisecond)
+
+	// Publish a message from node 0 (must be multiple of 8 bytes for chunk size)
+	msg := []byte("disable-completion-signal-test!!")
+	mid := hashSha256(msg)
+	if err := topics[0].Publish(msg); err != nil {
+		t.Fatal(err)
+	}
+
+	// Wait for all nodes to receive and reconstruct
+	time.Sleep(500 * time.Millisecond)
+
+	// Verify that node 0 has NOT tracked completion signals from nodes 1 and 2
+	// because DisableCompletionSignal is set to true
+	routers[0].mutex.Lock()
+	peer1 := hosts[1].ID()
+	peer2 := hosts[2].ID()
+
+	// Check if peer 1's completion is NOT tracked (should not be present)
+	if _, completed := routers[0].peerCompletedMessages[peer1][mid]; completed {
+		t.Fatal("node 0 should NOT have tracked completion signal from peer 1 (signals disabled)")
+	}
+
+	// Check if peer 2's completion is NOT tracked (should not be present)
+	if _, completed := routers[0].peerCompletedMessages[peer2][mid]; completed {
+		t.Fatal("node 0 should NOT have tracked completion signal from peer 2 (signals disabled)")
+	}
+	routers[0].mutex.Unlock()
+}

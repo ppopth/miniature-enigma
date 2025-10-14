@@ -689,6 +689,26 @@ func (r *RsEncoder) GetMinChunksForReconstruction(messageID string) int {
 	return chunkCount
 }
 
+// GetChunksBeforeCompletion returns the total number of chunks (data + parity) before sending completion signal
+func (r *RsEncoder) GetChunksBeforeCompletion(messageID string) int {
+	r.mutex.Lock()
+	defer r.mutex.Unlock()
+
+	chunkCount, exists := r.chunkCounts[messageID]
+	if !exists {
+		return 0 // Unknown message
+	}
+
+	// Calculate parity chunks
+	parityCount := int(float64(chunkCount) * r.config.ParityRatio)
+	if parityCount == 0 {
+		parityCount = 1 // At least 1 parity chunk
+	}
+
+	// Return total chunks (data + parity)
+	return chunkCount + parityCount
+}
+
 // generateEncodingMatrix creates the full systematic generator matrix G = [I | P]
 //
 // Following the systematic Reed-Solomon encoding procedure from Wikipedia:

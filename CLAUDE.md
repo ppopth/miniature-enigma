@@ -151,6 +151,18 @@ The Reed-Solomon implementation provides systematic MDS codes with predictable c
 - **ElementsPerChunk**: Number of field elements per chunk
 - **Systematic encoding**: First k chunks are original data, remaining are parity chunks
 
+#### EC Router Parameters
+The EC router (`ec/ec.go`) supports configuration via `EcParams`:
+- **PublishMultiplier**: Controls redundancy when publishing messages (default: 2)
+  - Example: With 8 chunks and multiplier 2, sends 16 total chunks
+- **ForwardMultiplier**: Controls redundancy when forwarding chunks (default: 2)
+  - Sends this many chunks for each innovative chunk received
+- **DisableCompletionSignal**: Controls completion signal behavior (default: false)
+  - When false (default): Nodes broadcast completion signals when reconstruction is complete
+  - When true: Completion signals are disabled
+  - Completion signals allow peers to stop sending chunks for completed messages, reducing unused chunk overhead
+  - Configure via `WithEcParams(EcParams{DisableCompletionSignal: true})`
+
 ### Chunk Statistics Tracking
 
 Both RLNC and Reed-Solomon encoders track chunk statistics in three categories:
@@ -171,6 +183,7 @@ Both RLNC and Reed-Solomon encoders track chunk statistics in three categories:
   - Chunks that arrive too late
   - Node already has enough chunks to reconstruct the message
   - Represent network overhead after message is usable
+  - Can be reduced by enabling completion signals (default behavior)
 
 **Statistics are logged on each chunk event:**
 ```

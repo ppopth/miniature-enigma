@@ -377,6 +377,13 @@ func (r *RlncEncoder) GetMinChunksForReconstruction(messageID string) int {
 	return len(chunks[0].Coeffs)
 }
 
+// GetChunksBeforeCompletion returns the number of chunks needed before sending completion signal
+func (r *RlncEncoder) GetChunksBeforeCompletion(messageID string) int {
+	// For RLNC, we send completion signal as soon as we can reconstruct,
+	// since there's no fixed total number of chunks
+	return r.GetMinChunksForReconstruction(messageID)
+}
+
 // ReconstructMessage recovers the original message by solving the linear system
 func (r *RlncEncoder) ReconstructMessage(messageID string) ([]byte, error) {
 	/*

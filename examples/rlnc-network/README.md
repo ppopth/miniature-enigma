@@ -46,6 +46,7 @@ The RLNC parameters are optimized for small message processing:
 - **Coefficient Bits**: 32 bits - full field size for maximum security
 - **Publish Multiplier**: 4x - aggressive initial redundancy for reliability
 - **Forward Multiplier**: 8x - high forwarding redundancy for network resilience
+- **Completion Signals**: Enabled by default - nodes broadcast completion when reconstruction finishes, reducing unused chunk overhead
 
 ## Command Line Options
 
@@ -108,6 +109,7 @@ Type messages to broadcast (press Enter to send, 'quit' to exit):
 3. **Network Distribution**: Coded chunks are distributed with 4x initial redundancy and 8x forwarding redundancy
 4. **Reconstruction**: Receivers collect linearly independent chunks to reconstruct the message
 5. **Progressive Decoding**: Partial reconstruction is possible as chunks arrive
+6. **Completion Signaling**: When a node completes reconstruction, it notifies peers to stop sending chunks for that message, reducing network overhead
 
 ## Network Topology Testing
 
