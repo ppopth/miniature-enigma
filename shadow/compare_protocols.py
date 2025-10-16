@@ -86,6 +86,9 @@ def run_simulation(protocol, node_count, msg_size, msg_count, num_chunks=None, m
     if disable_completion_signal and protocol in ["rlnc", "rs"]:
         cmd.append("DISABLE_COMPLETION_SIGNAL=true")
 
+    # Display the command being executed
+    print(f"Command: {' '.join(cmd)}")
+
     start_time = time.time()
     try:
         result = subprocess.run(cmd, check=True, capture_output=True, text=True)
