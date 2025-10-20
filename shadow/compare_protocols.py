@@ -62,7 +62,7 @@ def generate_topology(node_count, degree=3):
         return False
 
 
-def run_simulation(protocol, node_count, msg_size, msg_count, num_chunks=None, multiplier=None, log_level="info", disable_completion_signal=False):
+def run_simulation(protocol, node_count, msg_size, msg_count, num_chunks=None, multiplier=None, log_level="info", disable_completion_signal=False, bandwidth_interval=None):
     """Run a Shadow simulation for the specified protocol."""
     print(f"\n{'='*60}")
     print(f"Running {protocol.upper()} simulation...")
@@ -85,6 +85,9 @@ def run_simulation(protocol, node_count, msg_size, msg_count, num_chunks=None, m
 
     if disable_completion_signal and protocol in ["rlnc", "rs"]:
         cmd.append("DISABLE_COMPLETION_SIGNAL=true")
+
+    if bandwidth_interval and protocol in ["rlnc", "rs"]:
+        cmd.append(f"BANDWIDTH_INTERVAL={bandwidth_interval}")
 
     # Display the command being executed
     print(f"Command: {' '.join(cmd)}")
@@ -202,6 +205,76 @@ def calculate_message_latencies(message_arrivals):
             latencies.append(latency_ms)
 
     return latencies
+
+
+def parse_bandwidth_statistics(protocol, node_count, bandwidth_interval_ms=100):
+    """
+    Parse bandwidth statistics from Shadow logs.
+
+    Returns a dict: {node_id: [(timestamp_ns, send_mbps, recv_mbps)]}
+    Timestamps are rounded to the nearest interval boundary.
+
+    Args:
+        protocol: Protocol name (rs, rlnc, etc.)
+        node_count: Number of nodes in the simulation
+        bandwidth_interval_ms: Bandwidth logging interval in milliseconds (default: 100)
+    """
+    log_dir = f"{protocol}/shadow.data/hosts"
+
+    if not os.path.exists(log_dir):
+        print(f"Warning: Log directory not found: {log_dir}")
+        return {}
+
+    # Store bandwidth stats: node_id -> [(time, send_mbps, recv_mbps)]
+    node_stats = defaultdict(list)
+
+    # Bandwidth logging interval in nanoseconds
+    interval_ns = bandwidth_interval_ms * 1_000_000
+
+    # Parse logs for each node
+    for node_id in range(node_count):
+        node_name = f"node{node_id}"
+        node_dir = os.path.join(log_dir, node_name)
+
+        if not os.path.exists(node_dir):
+            continue
+
+        # Find log file
+        log_files = [f for f in os.listdir(node_dir) if f.startswith(f"{protocol}-sim") and f.endswith(".stderr")]
+
+        if not log_files:
+            continue
+
+        log_file = os.path.join(node_dir, log_files[0])
+
+        with open(log_file, 'r') as f:
+            for line in f:
+                # Look for bandwidth logs: "Bandwidth: SendMbps=X.XX, RecvMbps=Y.YY"
+                if "Bandwidth: SendMbps=" in line:
+                    # Extract timestamp - format: YYYY/MM/DD HH:MM:SS.microseconds
+                    timestamp_match = re.search(r'(\d{4})/(\d{2})/(\d{2}) (\d{2}):(\d{2}):(\d{2})\.(\d+)', line)
+                    if not timestamp_match:
+                        continue
+
+                    hour = int(timestamp_match.group(4))
+                    minute = int(timestamp_match.group(5))
+                    second = int(timestamp_match.group(6))
+                    microseconds = int(timestamp_match.group(7))
+                    timestamp_ns = (hour * 3600 + minute * 60 + second) * 1_000_000_000 + microseconds * 1000
+
+                    # Round timestamp to nearest interval boundary
+                    rounded_timestamp_ns = round(timestamp_ns / interval_ns) * interval_ns
+
+                    # Extract send and receive Mbps
+                    send_match = re.search(r'SendMbps=([\d.]+)', line)
+                    recv_match = re.search(r'RecvMbps=([\d.]+)', line)
+
+                    if send_match and recv_match:
+                        send_mbps = float(send_match.group(1))
+                        recv_mbps = float(recv_match.group(1))
+                        node_stats[node_id].append((rounded_timestamp_ns, send_mbps, recv_mbps))
+
+    return node_stats
 
 
 def parse_chunk_statistics(protocol, node_count):
@@ -513,6 +586,143 @@ def plot_chunk_statistics(rs_stats, rlnc_stats, output_file, node_count, num_chu
     print(f"{'='*60}\n")
 
 
+def plot_bandwidth_statistics(rs_stats, rlnc_stats, output_file, node_count, num_chunks, multiplier, msg_size, degree, disable_completion_signal=False):
+    """Plot time series of send and receive bandwidth (Mbps) for RS and RLNC protocols."""
+    fig, axes = plt.subplots(2, 2, figsize=(16, 12))
+    fig.suptitle(f'Network Bandwidth Over Time (Average Per Node)\n(Nodes: {node_count}, Peers: {degree}, Message Size: {msg_size}B)',
+                 fontsize=16, fontweight='bold')
+
+    # Add "(no completion signal)" suffix only when disabled (not when enabled, since that's default)
+    signal_suffix = " (no completion signal)" if disable_completion_signal else ""
+
+    protocols = [
+        (f'RS(2k) (k={num_chunks}, D={multiplier}, routing=random){signal_suffix}', rs_stats, '#2E86AB'),
+        (f'RLNC(n=kD) (k={num_chunks}, D={multiplier}, routing=random){signal_suffix}', rlnc_stats, '#A23B72')
+    ]
+
+    # Publish time is 2000/01/01 00:02:00 (2 minutes = 120 seconds = 120_000_000_000 ns)
+    publish_time_ns = 2 * 60 * 1_000_000_000
+
+    # First pass: compute all data to find global max x and y values
+    all_plot_data = []
+    global_max_x = 0
+    global_max_y = 0
+
+    for protocol_idx, (protocol_name, stats, color) in enumerate(protocols):
+        if not stats:
+            all_plot_data.append(None)
+            continue
+
+        # Aggregate data across all nodes efficiently
+        # Collect all data points from all nodes and group by timestamp
+        timestamp_data = defaultdict(lambda: {'send': [], 'recv': []})
+
+        for node_data in stats.values():
+            for t, send, recv in node_data:
+                timestamp_data[t]['send'].append(send)
+                timestamp_data[t]['recv'].append(recv)
+
+        # Sort timestamps and compute averages
+        sorted_times = sorted(timestamp_data.keys())
+        adjusted_times = [(t - publish_time_ns) / 1_000_000 for t in sorted_times]
+
+        avg_send_mbps = [np.mean(timestamp_data[t]['send']) for t in sorted_times]
+        avg_recv_mbps = [np.mean(timestamp_data[t]['recv']) for t in sorted_times]
+
+        # Find the last non-zero timestamp for this protocol
+        last_nonzero_idx = len(adjusted_times) - 1
+        for i in range(len(adjusted_times) - 1, -1, -1):
+            if avg_send_mbps[i] > 0 or avg_recv_mbps[i] > 0:
+                last_nonzero_idx = i
+                break
+
+        # Calculate global max values
+        if adjusted_times and last_nonzero_idx >= 0:
+            global_max_x = max(global_max_x, adjusted_times[last_nonzero_idx])
+        if avg_send_mbps:
+            global_max_y = max(global_max_y, max(avg_send_mbps))
+        if avg_recv_mbps:
+            global_max_y = max(global_max_y, max(avg_recv_mbps))
+
+        # Store data for second pass
+        all_plot_data.append({
+            'adjusted_times': adjusted_times,
+            'avg_send_mbps': avg_send_mbps,
+            'avg_recv_mbps': avg_recv_mbps
+        })
+
+    # Second pass: plot with uniform x and y axis scales
+    for protocol_idx, (protocol_name, stats, color) in enumerate(protocols):
+        plot_data = all_plot_data[protocol_idx]
+
+        if plot_data is None:
+            for ax in axes[:, protocol_idx]:
+                ax.text(0.5, 0.5, 'No data available', ha='center', va='center', transform=ax.transAxes)
+            continue
+
+        adjusted_times = plot_data['adjusted_times']
+        avg_send_mbps = plot_data['avg_send_mbps']
+        avg_recv_mbps = plot_data['avg_recv_mbps']
+
+        # Plot send bandwidth (top row)
+        ax_send = axes[0, protocol_idx]
+        ax_send.plot(adjusted_times, avg_send_mbps, linewidth=2, color=color, alpha=0.8)
+        ax_send.fill_between(adjusted_times, 0, avg_send_mbps, color=color, alpha=0.3)
+        ax_send.set_title(f'{protocol_name}\nSend Bandwidth', fontsize=12, fontweight='bold')
+        ax_send.set_xlabel('Time (milliseconds)', fontsize=10)
+        ax_send.set_ylabel('Bandwidth (Mbps)', fontsize=10)
+        ax_send.grid(True, alpha=0.3, linestyle='--')
+        ax_send.set_xlim(left=0, right=global_max_x * 1.02)  # Add 2% padding
+        ax_send.set_ylim(bottom=0, top=global_max_y * 1.05)  # Add 5% padding
+
+        # Plot receive bandwidth (bottom row)
+        ax_recv = axes[1, protocol_idx]
+        ax_recv.plot(adjusted_times, avg_recv_mbps, linewidth=2, color=color, alpha=0.8)
+        ax_recv.fill_between(adjusted_times, 0, avg_recv_mbps, color=color, alpha=0.3)
+        ax_recv.set_title(f'{protocol_name}\nReceive Bandwidth', fontsize=12, fontweight='bold')
+        ax_recv.set_xlabel('Time (milliseconds)', fontsize=10)
+        ax_recv.set_ylabel('Bandwidth (Mbps)', fontsize=10)
+        ax_recv.grid(True, alpha=0.3, linestyle='--')
+        ax_recv.set_xlim(left=0, right=global_max_x * 1.02)  # Add 2% padding
+        ax_recv.set_ylim(bottom=0, top=global_max_y * 1.05)  # Add 5% padding
+
+    plt.tight_layout()
+    plt.savefig(output_file, dpi=300, bbox_inches='tight')
+    print(f"✓ Bandwidth statistics plot saved to: {output_file}")
+
+    # Print summary statistics
+    print(f"\n{'='*60}")
+    print("Bandwidth Statistics Summary")
+    print(f"{'='*60}")
+
+    for protocol_name, stats, _ in protocols:
+        if not stats:
+            print(f"\n{protocol_name}: No data")
+            continue
+
+        all_send = []
+        all_recv = []
+        for node_data in stats.values():
+            for _, send, recv in node_data:
+                all_send.append(send)
+                all_recv.append(recv)
+
+        if all_send:
+            print(f"\n{protocol_name}:")
+            print(f"  Send bandwidth (Mbps):")
+            print(f"    Mean:       {np.mean(all_send):.2f}")
+            print(f"    Median:     {np.median(all_send):.2f}")
+            print(f"    P95:        {np.percentile(all_send, 95):.2f}")
+            print(f"    Max:        {np.max(all_send):.2f}")
+            print(f"  Receive bandwidth (Mbps):")
+            print(f"    Mean:       {np.mean(all_recv):.2f}")
+            print(f"    Median:     {np.median(all_recv):.2f}")
+            print(f"    P95:        {np.percentile(all_recv, 95):.2f}")
+            print(f"    Max:        {np.max(all_recv):.2f}")
+
+    print(f"{'='*60}\n")
+
+
 def plot_cdfs(gossipsub_latencies, rs_latencies, rlnc_latencies, output_file, msg_size, num_chunks, node_count, degree, multiplier, disable_completion_signal=False):
     """Plot CDF comparison of all three protocols."""
     plt.figure(figsize=(10, 6))
@@ -618,10 +828,14 @@ Examples:
                         help='Output file for CDF plot (default: protocol_comparison_cdf.png)')
     parser.add_argument('--chunk-stats-output', type=str, default='protocol_chunk_statistics.png',
                         help='Output file for chunk statistics plot (default: protocol_chunk_statistics.png)')
+    parser.add_argument('--bandwidth-output', type=str, default='protocol_bandwidth.png',
+                        help='Output file for bandwidth plot (default: protocol_bandwidth.png)')
     parser.add_argument('--skip-simulations', action='store_true',
                         help='Skip running simulations and use existing results for plotting')
     parser.add_argument('--disable-completion-signal', action='store_true',
                         help='Disable completion signals for RS and RLNC protocols (default: false, signals enabled)')
+    parser.add_argument('--bandwidth-interval', type=int, default=100,
+                        help='Bandwidth logging interval in milliseconds (default: 100)')
 
     args = parser.parse_args()
 
@@ -635,8 +849,10 @@ Node Count:      {args.node_count}
 Message Count:   {args.msg_count}
 Topology:        Random regular (degree {args.degree})
 Log Level:       {args.log_level}
+Bandwidth Int:   {args.bandwidth_interval}ms
 CDF Output:      {args.output}
 Chunk Stats:     {args.chunk_stats_output}
+Bandwidth:       {args.bandwidth_output}
 {'='*60}
 """)
 
@@ -680,7 +896,8 @@ Chunk Stats:     {args.chunk_stats_output}
                 args.num_chunks if protocol in ['rs', 'rlnc'] else None,
                 args.multiplier if protocol in ['rs', 'rlnc'] else None,
                 args.log_level,
-                args.disable_completion_signal
+                args.disable_completion_signal,
+                args.bandwidth_interval
             )
 
             if not success[protocol]:
@@ -747,6 +964,24 @@ Chunk Stats:     {args.chunk_stats_output}
                             args.msg_size, args.degree, args.disable_completion_signal)
     else:
         print("\nWarning: No chunk statistics found in logs.")
+
+    # Parse and plot bandwidth statistics for RS and RLNC
+    print(f"\n{'='*60}")
+    print("Parsing bandwidth statistics...")
+    print(f"{'='*60}")
+
+    rs_bandwidth_stats = parse_bandwidth_statistics('rs', args.node_count, args.bandwidth_interval)
+    rlnc_bandwidth_stats = parse_bandwidth_statistics('rlnc', args.node_count, args.bandwidth_interval)
+
+    print(f"✓ Reed-Solomon: Extracted bandwidth statistics for {len(rs_bandwidth_stats)} nodes")
+    print(f"✓ RLNC: Extracted bandwidth statistics for {len(rlnc_bandwidth_stats)} nodes")
+
+    if rs_bandwidth_stats or rlnc_bandwidth_stats:
+        plot_bandwidth_statistics(rs_bandwidth_stats, rlnc_bandwidth_stats,
+                                 args.bandwidth_output, args.node_count, args.num_chunks, args.multiplier,
+                                 args.msg_size, args.degree, args.disable_completion_signal)
+    else:
+        print("\nWarning: No bandwidth statistics found in logs.")
 
     print(f"\n{'='*60}")
     print("✓ Protocol comparison completed successfully!")

@@ -10,6 +10,7 @@ NUM_CHUNKS ?= 8
 MULTIPLIER ?= 4
 PROGRESS ?= false
 LOG_LEVEL ?= info
+BANDWIDTH_INTERVAL ?= 100
 
 # Run floodsub simulation
 floodsub:
@@ -29,22 +30,22 @@ gossipsub:
 # Run RLNC simulation
 rlnc:
 	@echo "Running RLNC simulation..."
-	cd rlnc && make all NODE_COUNT=$(NODE_COUNT) MSG_SIZE=$(MSG_SIZE) MSG_COUNT=$(MSG_COUNT) NUM_CHUNKS=$(NUM_CHUNKS) MULTIPLIER=$(MULTIPLIER) PROGRESS=$(PROGRESS) LOG_LEVEL=$(LOG_LEVEL)
+	cd rlnc && make all NODE_COUNT=$(NODE_COUNT) MSG_SIZE=$(MSG_SIZE) MSG_COUNT=$(MSG_COUNT) NUM_CHUNKS=$(NUM_CHUNKS) MULTIPLIER=$(MULTIPLIER) PROGRESS=$(PROGRESS) LOG_LEVEL=$(LOG_LEVEL) BANDWIDTH_INTERVAL=$(BANDWIDTH_INTERVAL)
 
 # Run RLNC simulation with QUIC streams
 rlnc-streams:
 	@echo "Running RLNC simulation with QUIC streams..."
-	cd rlnc && make all-streams NODE_COUNT=$(NODE_COUNT) MSG_SIZE=$(MSG_SIZE) MSG_COUNT=$(MSG_COUNT) NUM_CHUNKS=$(NUM_CHUNKS) MULTIPLIER=$(MULTIPLIER) PROGRESS=$(PROGRESS) LOG_LEVEL=$(LOG_LEVEL)
+	cd rlnc && make all-streams NODE_COUNT=$(NODE_COUNT) MSG_SIZE=$(MSG_SIZE) MSG_COUNT=$(MSG_COUNT) NUM_CHUNKS=$(NUM_CHUNKS) MULTIPLIER=$(MULTIPLIER) PROGRESS=$(PROGRESS) LOG_LEVEL=$(LOG_LEVEL) BANDWIDTH_INTERVAL=$(BANDWIDTH_INTERVAL)
 
 # Run Reed-Solomon simulation
 rs:
 	@echo "Running Reed-Solomon simulation..."
-	cd rs && make all NODE_COUNT=$(NODE_COUNT) MSG_SIZE=$(MSG_SIZE) MSG_COUNT=$(MSG_COUNT) NUM_CHUNKS=$(NUM_CHUNKS) MULTIPLIER=$(MULTIPLIER) PROGRESS=$(PROGRESS) LOG_LEVEL=$(LOG_LEVEL)
+	cd rs && make all NODE_COUNT=$(NODE_COUNT) MSG_SIZE=$(MSG_SIZE) MSG_COUNT=$(MSG_COUNT) NUM_CHUNKS=$(NUM_CHUNKS) MULTIPLIER=$(MULTIPLIER) PROGRESS=$(PROGRESS) LOG_LEVEL=$(LOG_LEVEL) BANDWIDTH_INTERVAL=$(BANDWIDTH_INTERVAL)
 
 # Run Reed-Solomon simulation with QUIC streams
 rs-streams:
 	@echo "Running Reed-Solomon simulation with QUIC streams..."
-	cd rs && make all-streams NODE_COUNT=$(NODE_COUNT) MSG_SIZE=$(MSG_SIZE) MSG_COUNT=$(MSG_COUNT) NUM_CHUNKS=$(NUM_CHUNKS) MULTIPLIER=$(MULTIPLIER) PROGRESS=$(PROGRESS) LOG_LEVEL=$(LOG_LEVEL)
+	cd rs && make all-streams NODE_COUNT=$(NODE_COUNT) MSG_SIZE=$(MSG_SIZE) MSG_COUNT=$(MSG_COUNT) NUM_CHUNKS=$(NUM_CHUNKS) MULTIPLIER=$(MULTIPLIER) PROGRESS=$(PROGRESS) LOG_LEVEL=$(LOG_LEVEL) BANDWIDTH_INTERVAL=$(BANDWIDTH_INTERVAL)
 
 # Test all protocol results
 test-all:
@@ -185,11 +186,12 @@ help:
 	@echo "  help            - Show this help message"
 	@echo ""
 	@echo "Configuration variables:"
-	@echo "  NODE_COUNT      - Number of nodes (default: $(NODE_COUNT))"
-	@echo "  MSG_SIZE        - Message size in bytes (default: $(MSG_SIZE))"
-	@echo "  MSG_COUNT       - Number of messages (default: $(MSG_COUNT))"
-	@echo "  NUM_CHUNKS      - Number of chunks for RLNC and RS (default: $(NUM_CHUNKS))"
-	@echo "  PROGRESS        - Show Shadow progress bar (default: $(PROGRESS))"
+	@echo "  NODE_COUNT         - Number of nodes (default: $(NODE_COUNT))"
+	@echo "  MSG_SIZE           - Message size in bytes (default: $(MSG_SIZE))"
+	@echo "  MSG_COUNT          - Number of messages (default: $(MSG_COUNT))"
+	@echo "  NUM_CHUNKS         - Number of chunks for RLNC and RS (default: $(NUM_CHUNKS))"
+	@echo "  BANDWIDTH_INTERVAL - Bandwidth logging interval in ms (default: $(BANDWIDTH_INTERVAL))"
+	@echo "  PROGRESS           - Show Shadow progress bar (default: $(PROGRESS))"
 	@echo ""
 	@echo "Examples:"
 	@echo "  make all                                    # Run all protocols with defaults"
@@ -202,6 +204,7 @@ help:
 	@echo "  make rs-streams NODE_COUNT=10              # Run Reed-Solomon with QUIC streams"
 	@echo "  make rlnc MSG_SIZE=512 NUM_CHUNKS=16       # Run RLNC with 16 chunks"
 	@echo "  make rs MSG_SIZE=512 NUM_CHUNKS=16         # Run Reed-Solomon with 16 chunks"
+	@echo "  make rlnc BANDWIDTH_INTERVAL=50            # Run RLNC with 50ms bandwidth logging"
 	@echo "  make floodsub PROGRESS=true                # Run FloodSub with progress bar"
 	@echo "  make test-all                              # Test all existing results"
 	@echo ""

@@ -32,6 +32,7 @@ func main() {
 		useStreams              = flag.Bool("use-streams", false, "Use QUIC streams instead of datagrams")
 		logLevel                = flag.String("log-level", "info", "Log level (debug, info, warn, error)")
 		disableCompletionSignal = flag.Bool("disable-completion-signal", false, "Disable completion signals (default: false, signals enabled)")
+		bandwidthInterval       = flag.Int("bandwidth-interval", 100, "Bandwidth logging interval in milliseconds (default: 100ms)")
 	)
 	flag.Parse()
 
@@ -232,6 +233,34 @@ func main() {
 	if waitDuration > 0 {
 		time.Sleep(waitDuration)
 	}
+
+	// Start periodic bandwidth logging (in Mbps)
+	go func() {
+		interval := time.Duration(*bandwidthInterval) * time.Millisecond
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+
+		var prevBytesSent, prevBytesReceived uint64
+		intervalSeconds := float64(*bandwidthInterval) / 1000.0
+
+		for range ticker.C {
+			bytesSent := h.GetBytesSent()
+			bytesReceived := h.GetBytesReceived()
+
+			// Calculate bandwidth in Mbps (megabits per second)
+			// (delta bytes * 8 bits/byte) / (interval_seconds * 1_000_000 bits/Mbit)
+			deltaBytesSent := bytesSent - prevBytesSent
+			deltaBytesReceived := bytesReceived - prevBytesReceived
+
+			sendMbps := float64(deltaBytesSent) * 8.0 / (intervalSeconds * 1_000_000)
+			recvMbps := float64(deltaBytesReceived) * 8.0 / (intervalSeconds * 1_000_000)
+
+			log.Printf("Bandwidth: SendMbps=%.2f, RecvMbps=%.2f", sendMbps, recvMbps)
+
+			prevBytesSent = bytesSent
+			prevBytesReceived = bytesReceived
+		}
+	}()
 
 	// Start message receiver goroutine
 	receivedCount := 0
