@@ -68,11 +68,6 @@ type RlncEncoder struct {
 	mutex     sync.Mutex                   // Protects chunks map and REF data
 	chunks    map[string][]Chunk           // Storage for chunks by message ID
 	coeffsREF map[string][][]field.Element // REF form of coefficient vectors by message ID
-
-	statsMutex    sync.Mutex // Protects chunk statistics
-	usefulChunks  uint64     // Number of useful chunks (linearly independent before reconstruction possible)
-	uselessChunks uint64     // Number of useless chunks (invalid/duplicate/dependent before reconstruction possible)
-	unusedChunks  uint64     // Number of unused chunks (received after reconstruction already possible)
 }
 
 func NewRlncEncoder(config *RlncEncoderConfig) (*RlncEncoder, error) {
@@ -104,30 +99,6 @@ func NewRlncEncoder(config *RlncEncoderConfig) (*RlncEncoder, error) {
 	return r, nil
 }
 
-// incrementUsefulChunks increments the useful chunk counter and logs the event
-func (r *RlncEncoder) incrementUsefulChunks() {
-	r.statsMutex.Lock()
-	r.usefulChunks++
-	log.Infof("Chunk event: Useful: %d, Useless: %d, Unused: %d", r.usefulChunks, r.uselessChunks, r.unusedChunks)
-	r.statsMutex.Unlock()
-}
-
-// incrementUselessChunks increments the useless chunk counter and logs the event
-func (r *RlncEncoder) incrementUselessChunks() {
-	r.statsMutex.Lock()
-	r.uselessChunks++
-	log.Infof("Chunk event: Useful: %d, Useless: %d, Unused: %d", r.usefulChunks, r.uselessChunks, r.unusedChunks)
-	r.statsMutex.Unlock()
-}
-
-// incrementUnusedChunks increments the unused chunk counter and logs the event
-func (r *RlncEncoder) incrementUnusedChunks() {
-	r.statsMutex.Lock()
-	r.unusedChunks++
-	log.Infof("Chunk event: Useful: %d, Useless: %d, Unused: %d", r.usefulChunks, r.uselessChunks, r.unusedChunks)
-	r.statsMutex.Unlock()
-}
-
 // VerifyThenAddChunk verifies a chunk and stores it if valid and linearly independent
 func (r *RlncEncoder) VerifyThenAddChunk(chunk encode.Chunk) bool {
 	// Convert generic chunk to RLNC chunk type
@@ -142,46 +113,23 @@ func (r *RlncEncoder) VerifyThenAddChunk(chunk encode.Chunk) bool {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
 
-	// Check if we already have enough chunks to reconstruct
-	currentChunkCount := len(r.chunks[messageID])
-	numChunks := len(rlncChunk.Coeffs) // Number of original chunks needed
-	canReconstruct := currentChunkCount >= numChunks
-
 	// Use REF-optimized incremental independence check
 	existingREF := r.coeffsREF[messageID]
 	newREF, isIndependent := field.IsLinearlyIndependentIncremental(existingREF, rlncChunk.Coeffs, r.config.Field)
 	if !isIndependent {
 		// Linearly dependent chunk
-		if canReconstruct {
-			r.incrementUnusedChunks()
-		} else {
-			r.incrementUselessChunks()
-		}
 		return false
 	}
 
 	// Call internal verifier if available (after linear independence check)
 	if r.config.Verifier != nil && !r.config.Verifier.Verify(&rlncChunk) {
 		// Verification failed on linearly independent chunk
-		if canReconstruct {
-			r.incrementUnusedChunks()
-		} else {
-			r.incrementUselessChunks()
-		}
 		return false
 	}
 
 	// Add chunk to storage and update REF
 	r.chunks[messageID] = append(r.chunks[messageID], rlncChunk)
 	r.coeffsREF[messageID] = newREF
-
-	// Linearly independent chunk
-	if canReconstruct {
-		// Already had enough before this chunk
-		r.incrementUnusedChunks()
-	} else {
-		r.incrementUsefulChunks()
-	}
 
 	return true
 }

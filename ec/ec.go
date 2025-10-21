@@ -103,6 +103,10 @@ type EcRouter struct {
 	completionSignalsSent map[string]struct{} // Track which messages have had completion signals sent
 
 	preventedChunks int // Count of chunks prevented from being sent due to completion signals
+
+	usefulChunks  uint64 // Number of useful chunks (received before reconstruction possible)
+	uselessChunks uint64 // Number of useless chunks (invalid/duplicate/failed before reconstruction possible)
+	unusedChunks  uint64 // Number of unused chunks (received after reconstruction already possible)
 }
 
 type EcParams struct {
@@ -353,26 +357,49 @@ func (router *EcRouter) HandleIncomingRPC(peerID peer.ID, topicRPC *pb.TopicRpc)
 
 		log.Debugf("Received chunk for message %s from peer %s", messageID[:8], peerID.String()[:8])
 
+		// Check if we can already reconstruct BEFORE adding this chunk
+		chunkCount := router.encoder.GetChunkCount(messageID)
+		minChunks := router.encoder.GetMinChunksForReconstruction(messageID)
+		canReconstruct := minChunks > 0 && chunkCount >= minChunks
+
 		// Decode the chunk using the encoder
 		decodedChunk, err := router.encoder.DecodeChunk(messageID, chunkData, extraData)
 		if err != nil {
 			log.Debugf("Failed to decode chunk for message %s from peer %s: %v", messageID[:8], peerID.String()[:8], err)
+			if canReconstruct {
+				router.incrementUnusedChunks()
+			} else {
+				router.incrementUselessChunks()
+			}
 			continue
 		}
 
 		// Use encoder to verify and add the chunk
 		if !router.encoder.VerifyThenAddChunk(decodedChunk) {
 			log.Debugf("Chunk verification failed for message %s from peer %s (duplicate or invalid)", messageID[:8], peerID.String()[:8])
+			if canReconstruct {
+				router.incrementUnusedChunks()
+			} else {
+				router.incrementUselessChunks()
+			}
 			continue
 		}
 
 		log.Debugf("Valid chunk accepted for message %s from peer %s", messageID[:8], peerID.String()[:8])
 
+		// Track chunk statistics - chunk was accepted
+		if canReconstruct {
+			router.incrementUnusedChunks()
+		} else {
+			router.incrementUsefulChunks()
+		}
+
 		// Innovative chunk! Forward it to help network propagation
 		messagesToSend[messageID] += router.params.ForwardMultiplier
 
-		chunkCount := router.encoder.GetChunkCount(messageID)
-		minChunks := router.encoder.GetMinChunksForReconstruction(messageID)
+		// Update chunk counts after adding the new chunk
+		chunkCount = router.encoder.GetChunkCount(messageID)
+		minChunks = router.encoder.GetMinChunksForReconstruction(messageID)
 		chunksBeforeCompletion := router.encoder.GetChunksBeforeCompletion(messageID)
 
 		// Check if we have enough chunks to reconstruct the message
@@ -414,6 +441,27 @@ func (router *EcRouter) Close() error {
 	router.cancel()
 	router.cond.Broadcast()
 	return nil
+}
+
+// incrementUsefulChunks increments the useful chunk counter and logs the event
+// Must be called while holding router.mutex
+func (router *EcRouter) incrementUsefulChunks() {
+	router.usefulChunks++
+	log.Infof("Chunk event: Useful: %d, Useless: %d, Unused: %d", router.usefulChunks, router.uselessChunks, router.unusedChunks)
+}
+
+// incrementUselessChunks increments the useless chunk counter and logs the event
+// Must be called while holding router.mutex
+func (router *EcRouter) incrementUselessChunks() {
+	router.uselessChunks++
+	log.Infof("Chunk event: Useful: %d, Useless: %d, Unused: %d", router.usefulChunks, router.uselessChunks, router.unusedChunks)
+}
+
+// incrementUnusedChunks increments the unused chunk counter and logs the event
+// Must be called while holding router.mutex
+func (router *EcRouter) incrementUnusedChunks() {
+	router.unusedChunks++
+	log.Infof("Chunk event: Useful: %d, Useless: %d, Unused: %d", router.usefulChunks, router.uselessChunks, router.unusedChunks)
 }
 
 // hashSha256 is our default message ID function - SHA-256 hex string
