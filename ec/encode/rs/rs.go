@@ -212,7 +212,7 @@ func (r *RsEncoder) VerifyThenAddChunk(chunk encode.Chunk) bool {
 	return true
 }
 
-// EmitChunk emits the earliest chunk that hasn't been emitted yet
+// EmitChunk emits the earliest chunk with the lowest emit count that hasn't reached MinEmitCount
 func (r *RsEncoder) EmitChunk(messageID string) (encode.Chunk, error) {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
@@ -233,16 +233,31 @@ func (r *RsEncoder) EmitChunk(messageID string) (encode.Chunk, error) {
 		r.emitCounts[messageID] = make(map[int]int)
 	}
 
-	// Find the earliest chunk that hasn't reached MinEmitCount
-	// Iterate from the beginning of the order array (earliest chunks)
+	// Find the earliest chunk with the lowest emit count that hasn't reached MinEmitCount
+	// Strategy: iterate through all chunks in order, track the one with lowest emit count
+	selectedIndex := -1
+	lowestEmitCount := r.config.MinEmitCount
+
 	for i := 0; i < len(order); i++ {
 		chunkIndex := order[i]
 		emitCount := r.emitCounts[messageID][chunkIndex]
+
+		// Only consider chunks that haven't reached MinEmitCount
 		if emitCount < r.config.MinEmitCount {
-			// Increment emit count for this chunk
-			r.emitCounts[messageID][chunkIndex]++
-			return chunks[chunkIndex], nil
+			// If this is the first valid chunk or has lower emit count, select it
+			if selectedIndex == -1 || emitCount < lowestEmitCount {
+				selectedIndex = i
+				lowestEmitCount = emitCount
+			}
+			// If emit counts are equal, the earlier one (lower i) is already selected
 		}
+	}
+
+	// If we found a chunk that hasn't reached MinEmitCount, emit it
+	if selectedIndex != -1 {
+		chunkIndex := order[selectedIndex]
+		r.emitCounts[messageID][chunkIndex]++
+		return chunks[chunkIndex], nil
 	}
 
 	// All chunks have been emitted MinEmitCount times, return the latest chunk
