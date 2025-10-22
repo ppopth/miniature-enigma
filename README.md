@@ -31,10 +31,6 @@ go mod download
 
 # Build all packages
 go build ./...
-
-# Build example application
-cd examples/simple
-go build
 ```
 
 ### Running Tests
@@ -50,14 +46,6 @@ go test -coverprofile=coverage.out ./...
 ### Examples
 
 The project includes comprehensive examples demonstrating different erasure coding approaches:
-
-#### Simple Network (Basic P2P)
-```bash
-cd examples/simple
-go build
-./simple -l 8001               # Listening node
-./simple -c 127.0.0.1:8001     # Connecting node
-```
 
 #### RLNC Network (Random Linear Network Coding)
 ```bash

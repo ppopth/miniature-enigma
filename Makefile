@@ -5,8 +5,6 @@ GOCLEAN=$(GOCMD) clean
 GOTEST=$(GOCMD) test
 GOGET=$(GOCMD) get
 GOMOD=$(GOCMD) mod
-BINARY_NAME=simple
-BINARY_UNIX=$(BINARY_NAME)_unix
 
 # Test parameters
 TEST_PACKAGES=./...
@@ -29,8 +27,6 @@ build: ## Build the project
 clean: ## Clean build artifacts
 	$(GOCLEAN)
 	rm -f $(COVERAGE_OUT)
-	rm -f examples/simple/simple
-	rm -f examples/simple/simple_unix
 	rm -f examples/rlnc-network/rlnc-network
 	rm -f examples/rlnc-network/rlnc-network_unix
 	rm -f examples/rs-network/rs-network
@@ -69,12 +65,10 @@ proto-clean: ## Clean protobuf generated files
 	cd pb && $(MAKE) clean
 
 example: ## Build example applications
-	cd examples/simple && $(GOBUILD) -o simple -v .
 	cd examples/rlnc-network && $(GOBUILD) -o rlnc-network -v .
 	cd examples/rs-network && $(GOBUILD) -o rs-network -v .
 
 example-linux: ## Cross compile examples for Linux
-	cd examples/simple && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 $(GOBUILD) -o simple_unix -v .
 	cd examples/rlnc-network && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 $(GOBUILD) -o rlnc-network_unix -v .
 	cd examples/rs-network && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 $(GOBUILD) -o rs-network_unix -v .
 

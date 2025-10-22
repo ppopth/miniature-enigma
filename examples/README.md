@@ -4,23 +4,7 @@ This directory contains practical examples demonstrating the erasure coding capa
 
 ## Available Examples
 
-### 1. Simple Network (`simple/`)
-Basic peer-to-peer network without erasure coding. Good for understanding the fundamental networking layer.
-
-**Features:**
-- Basic host-to-host connections
-- PubSub messaging without encoding
-- Foundation for understanding the networking stack
-
-**Usage:**
-```bash
-cd simple/
-go build
-./simple -l 8001          # Listening node
-./simple -c 127.0.0.1:8001  # Connecting node
-```
-
-### 2. RLNC Network (`rlnc-network/`)
+### 1. RLNC Network (`rlnc-network/`)
 Random Linear Network Coding implementation for dynamic, resilient networks.
 
 **Features:**
@@ -37,7 +21,7 @@ go build
 ./rlnc-network -l 8002 -c 127.0.0.1:8001 -id bob
 ```
 
-### 3. Reed-Solomon Network (`rs-network/`)
+### 2. Reed-Solomon Network (`rs-network/`)
 Reed-Solomon systematic MDS codes for efficient, predictable erasure coding.
 
 **Features:**
@@ -64,7 +48,6 @@ make example        # Build all example applications
 make example-linux  # Cross compile for Linux
 
 # Or build individually
-cd examples/simple && go build
 cd examples/rlnc-network && go build
 cd examples/rs-network && go build
 ```

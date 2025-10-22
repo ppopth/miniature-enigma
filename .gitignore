@@ -1,8 +1,6 @@
 *.swp
 
 # Example binaries
-examples/simple/simple
-examples/simple/simple_unix
 examples/rlnc-network/rlnc-network
 examples/rlnc-network/rlnc-network_unix
 examples/rs-network/rs-network

@@ -63,7 +63,6 @@ make clean                # Clean build artifacts
 ### Direct Go Commands
 ```bash
 go build                    # Build current package
-go build ./examples/simple  # Build example application
 go test ./...              # Run all tests
 go test -v ./host          # Run host tests with verbose output
 go test -v ./pubsub        # Run pubsub tests with verbose output
@@ -80,11 +79,6 @@ cd pb && make clean        # Clean generated files
 
 ### Running Examples
 ```bash
-# Simple Network (basic P2P)
-cd examples/simple && go build
-./simple -l 8001          # Listening node
-./simple -c 127.0.0.1:8001 # Connecting node
-
 # RLNC Network (Random Linear Network Coding)
 cd examples/rlnc-network && go build
 ./rlnc-network -l 8001 -id alice
