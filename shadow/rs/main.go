@@ -137,9 +137,9 @@ func main() {
 		messageChunkSize, elementsPerChunk, networkChunkSize)
 
 	// Divide multiplier by 2 since ParityRatio is 100% (already 2x redundancy)
-	effectiveMultiplier := *multiplier / 2
-	if effectiveMultiplier < 1 {
-		effectiveMultiplier = 1
+	publishMultiplier := *multiplier / 2
+	if publishMultiplier < 1 {
+		publishMultiplier = 1
 	}
 
 	rsConfig := &rs.RsEncoderConfig{
@@ -149,7 +149,6 @@ func main() {
 		ElementsPerChunk: elementsPerChunk,
 		Field:            f,
 		PrimitiveElement: f.FromBytes(big.NewInt(3).Bytes()), // 3 is a primitive element for prime fields
-		MinEmitCount:     effectiveMultiplier,
 	}
 	encoder, err := rs.NewRsEncoder(rsConfig)
 	if err != nil {
@@ -158,8 +157,8 @@ func main() {
 
 	// Create EC router with Reed-Solomon
 	router, err := ec.NewEcRouter(encoder, ec.WithEcParams(ec.EcParams{
-		PublishMultiplier:       effectiveMultiplier,
-		ForwardMultiplier:       effectiveMultiplier,
+		PublishMultiplier:       publishMultiplier,
+		ForwardMultiplier:       *multiplier,
 		DisableCompletionSignal: *disableCompletionSignal,
 	}))
 	if err != nil {

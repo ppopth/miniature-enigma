@@ -54,8 +54,6 @@ type RsEncoderConfig struct {
 	ElementsPerChunk int
 	// Finite field for operations
 	Field field.Field
-	// Minimum number of times a chunk should be emitted before moving to the next
-	MinEmitCount int
 	// Primitive element for generating evaluation points
 	// Must be provided when Field is set
 	PrimitiveElement field.Element
@@ -94,9 +92,6 @@ func NewRsEncoder(config *RsEncoderConfig) (*RsEncoder, error) {
 	}
 	if config.ElementsPerChunk <= 0 {
 		return nil, fmt.Errorf("elements per chunk must be positive")
-	}
-	if config.MinEmitCount <= 0 {
-		config.MinEmitCount = 1 // Default to emit at least once
 	}
 	if config.Field != nil && config.PrimitiveElement == nil {
 		return nil, fmt.Errorf("primitive element must be provided when field is set")
@@ -140,7 +135,6 @@ func DefaultRsEncoderConfig() *RsEncoderConfig {
 		NetworkChunkSize: 1024,                      // Network chunk size in bytes (same as message for GF(2^8))
 		ElementsPerChunk: 1024,                      // Number of field elements per chunk
 		Field:            f,                         // GF(2^8)
-		MinEmitCount:     1,                         // Emit each chunk at least once
 		PrimitiveElement: f.FromBytes([]byte{0x03}), // 0x03 is primitive in GF(2^8) with polynomial 0x11B
 	}
 }
@@ -212,7 +206,7 @@ func (r *RsEncoder) VerifyThenAddChunk(chunk encode.Chunk) bool {
 	return true
 }
 
-// EmitChunk emits the earliest chunk with the lowest emit count that hasn't reached MinEmitCount
+// EmitChunk emits the earliest chunk with the lowest emit count
 func (r *RsEncoder) EmitChunk(messageID string) (encode.Chunk, error) {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
@@ -233,37 +227,28 @@ func (r *RsEncoder) EmitChunk(messageID string) (encode.Chunk, error) {
 		r.emitCounts[messageID] = make(map[int]int)
 	}
 
-	// Find the earliest chunk with the lowest emit count that hasn't reached MinEmitCount
+	// Find the earliest chunk with the lowest emit count
 	// Strategy: iterate through all chunks in order, track the one with lowest emit count
 	selectedIndex := -1
-	lowestEmitCount := r.config.MinEmitCount
+	lowestEmitCount := -1
 
 	for i := 0; i < len(order); i++ {
 		chunkIndex := order[i]
 		emitCount := r.emitCounts[messageID][chunkIndex]
 
-		// Only consider chunks that haven't reached MinEmitCount
-		if emitCount < r.config.MinEmitCount {
-			// If this is the first valid chunk or has lower emit count, select it
-			if selectedIndex == -1 || emitCount < lowestEmitCount {
-				selectedIndex = i
-				lowestEmitCount = emitCount
-			}
-			// If emit counts are equal, the earlier one (lower i) is already selected
+		// If this is the first chunk or has lower emit count, select it
+		if selectedIndex == -1 || emitCount < lowestEmitCount {
+			selectedIndex = i
+			lowestEmitCount = emitCount
 		}
+		// If emit counts are equal, the earlier one (lower i) is already selected
 	}
 
-	// If we found a chunk that hasn't reached MinEmitCount, emit it
+	// Emit the selected chunk
 	if selectedIndex != -1 {
 		chunkIndex := order[selectedIndex]
 		r.emitCounts[messageID][chunkIndex]++
 		return chunks[chunkIndex], nil
-	}
-
-	// All chunks have been emitted MinEmitCount times, return the latest chunk
-	if len(order) > 0 {
-		latestIndex := order[len(order)-1]
-		return chunks[latestIndex], nil
 	}
 
 	return nil, fmt.Errorf("no chunks found for message %s", messageID)
