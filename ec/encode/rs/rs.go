@@ -10,6 +10,7 @@ import (
 	"github.com/ethp2p/eth-ec-broadcast/pb"
 
 	logging "github.com/ipfs/go-log/v2"
+	"github.com/libp2p/go-libp2p/core/peer"
 )
 
 var log = logging.Logger("rs")
@@ -21,6 +22,7 @@ type Chunk struct {
 	ChunkData  []byte // The actual chunk data
 	ChunkCount int    // Number of data chunks for this message
 	Extra      []byte // Optional extra data (verification info, signatures, etc.)
+	Bitmap     []byte // Bitmap of missing chunks (bit i = 1 means chunk i is missing)
 }
 
 // Data returns the chunk's data bytes (implements encode.Chunk interface)
@@ -28,7 +30,7 @@ func (c Chunk) Data() []byte {
 	return c.ChunkData
 }
 
-// EncodeExtra serializes the chunk's index and extra data to RsExtra protobuf
+// EncodeExtra serializes the chunk's index, bitmap, and extra data to RsExtra protobuf
 func (c Chunk) EncodeExtra() []byte {
 	index := uint32(c.Index)
 	chunkCount := uint32(c.ChunkCount)
@@ -36,6 +38,11 @@ func (c Chunk) EncodeExtra() []byte {
 		Index:      &index,
 		ChunkCount: &chunkCount,
 		Extra:      c.Extra,
+	}
+
+	// Include bitmap if present
+	if len(c.Bitmap) > 0 {
+		rsExtra.IwantBitmap = c.Bitmap
 	}
 
 	data, _ := rsExtra.Marshal()
@@ -59,6 +66,9 @@ type RsEncoderConfig struct {
 	PrimitiveElement field.Element
 	// Optional chunk verifier for validating chunks
 	ChunkVerifier ChunkVerifier
+	// Threshold for starting to send bitmap (e.g., 0.3 = start sending when 70% of chunks received)
+	// Bitmap starts when receivedCount >= (1 - BitmapThreshold) * totalChunks
+	BitmapThreshold float64
 }
 
 // RsEncoder implements Reed-Solomon erasure coding
@@ -73,6 +83,10 @@ type RsEncoder struct {
 	chunkCounts map[string]int           // Number of data chunks per message
 	chunkOrder  map[string][]int         // Order in which chunks were received
 	emitCounts  map[string]map[int]int   // Track how many times each chunk has been emitted
+
+	// Track which peers have sent bitmaps for each message
+	// Map structure: messageID -> set of peer IDs who sent bitmaps
+	peerBitmaps map[string]map[peer.ID]struct{}
 }
 
 // NewRsEncoder creates a new Reed-Solomon encoder
@@ -103,6 +117,7 @@ func NewRsEncoder(config *RsEncoderConfig) (*RsEncoder, error) {
 		chunkCounts: make(map[string]int),
 		chunkOrder:  make(map[string][]int),
 		emitCounts:  make(map[string]map[int]int),
+		peerBitmaps: make(map[string]map[peer.ID]struct{}),
 	}
 
 	if (8*r.config.MessageChunkSize)%r.config.ElementsPerChunk != 0 {
@@ -136,11 +151,12 @@ func DefaultRsEncoderConfig() *RsEncoderConfig {
 		ElementsPerChunk: 1024,                      // Number of field elements per chunk
 		Field:            f,                         // GF(2^8)
 		PrimitiveElement: f.FromBytes([]byte{0x03}), // 0x03 is primitive in GF(2^8) with polynomial 0x11B
+		BitmapThreshold:  0.5,                       // Start sending bitmap when (1-0.5)=50% of chunks received
 	}
 }
 
 // VerifyThenAddChunk verifies and stores a chunk if valid
-func (r *RsEncoder) VerifyThenAddChunk(chunk encode.Chunk) bool {
+func (r *RsEncoder) VerifyThenAddChunk(peerID peer.ID, chunk encode.Chunk) bool {
 	// Convert generic chunk to RS chunk type
 	rsChunk, ok := chunk.(Chunk)
 	if !ok {
@@ -149,6 +165,16 @@ func (r *RsEncoder) VerifyThenAddChunk(chunk encode.Chunk) bool {
 
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
+
+	// Check if this chunk contains a bitmap
+	if len(rsChunk.Bitmap) > 0 {
+		// Initialize the bitmap tracking for this message if needed
+		if r.peerBitmaps[rsChunk.MessageID] == nil {
+			r.peerBitmaps[rsChunk.MessageID] = make(map[peer.ID]struct{})
+		}
+		// Mark that this peer has sent a bitmap for this message
+		r.peerBitmaps[rsChunk.MessageID][peerID] = struct{}{}
+	}
 
 	// Initialize chunk storage for this message if needed
 	if _, exists := r.chunks[rsChunk.MessageID]; !exists {
@@ -175,10 +201,7 @@ func (r *RsEncoder) VerifyThenAddChunk(chunk encode.Chunk) bool {
 	}
 
 	// Calculate parity chunks for this message
-	parityCount := int(float64(chunkCount) * r.config.ParityRatio)
-	if parityCount == 0 {
-		parityCount = 1 // At least 1 parity chunk
-	}
+	parityCount := r.getParityCount(chunkCount)
 
 	// Check if chunk index is valid
 	totalChunks := chunkCount + parityCount
@@ -206,10 +229,70 @@ func (r *RsEncoder) VerifyThenAddChunk(chunk encode.Chunk) bool {
 	return true
 }
 
+// getParityCount returns the number of parity chunks for a given data chunk count
+func (r *RsEncoder) getParityCount(chunkCount int) int {
+	parityCount := int(float64(chunkCount) * r.config.ParityRatio)
+	if parityCount == 0 {
+		parityCount = 1 // At least 1 parity chunk
+	}
+	return parityCount
+}
+
+// generateBitmap creates a bitmap of missing chunks for a message
+// Returns nil if the bitmap threshold hasn't been met or if no chunks are missing
+// Bitmap format: bit i = 1 means chunk i is missing (needed)
+func (r *RsEncoder) generateBitmap(messageID string) []byte {
+	// Must be called while holding r.mutex
+
+	chunkCount, exists := r.chunkCounts[messageID]
+	if !exists || chunkCount == 0 {
+		return nil
+	}
+
+	// Calculate total chunks (data + parity)
+	parityCount := r.getParityCount(chunkCount)
+	totalChunks := chunkCount + parityCount
+
+	// Check if we've received enough chunks to start sending bitmap
+	// Start when receivedCount >= (1 - BitmapThreshold) * totalChunks
+	receivedCount := len(r.chunks[messageID])
+	threshold := int(float64(totalChunks) * (1.0 - r.config.BitmapThreshold))
+	if receivedCount < threshold {
+		return nil
+	}
+
+	// Check if we already have enough chunks for reconstruction
+	if receivedCount >= chunkCount {
+		return nil // No need for more chunks
+	}
+
+	// Create bitmap: byte array where bit i indicates if chunk i is missing
+	bitmapSize := (totalChunks + 7) / 8 // Round up to nearest byte
+	bitmap := make([]byte, bitmapSize)
+
+	// Set bits for missing chunks
+	for i := 0; i < totalChunks; i++ {
+		if _, have := r.chunks[messageID][i]; !have {
+			byteIndex := i / 8
+			bitIndex := i % 8
+			bitmap[byteIndex] |= (1 << bitIndex)
+		}
+	}
+
+	return bitmap
+}
+
 // EmitChunk emits the earliest chunk with the lowest emit count
-func (r *RsEncoder) EmitChunk(messageID string) (encode.Chunk, error) {
+func (r *RsEncoder) EmitChunk(targetPeerID peer.ID, messageID string) (encode.Chunk, error) {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
+
+	// Check if this peer has sent a bitmap for this message
+	if peerSet, exists := r.peerBitmaps[messageID]; exists {
+		if _, hasBitmap := peerSet[targetPeerID]; hasBitmap {
+			return nil, fmt.Errorf("peer %s has sent bitmap for message %s", targetPeerID, messageID)
+		}
+	}
 
 	chunks, exists := r.chunks[messageID]
 	if !exists || len(chunks) == 0 {
@@ -226,6 +309,9 @@ func (r *RsEncoder) EmitChunk(messageID string) (encode.Chunk, error) {
 	if _, exists := r.emitCounts[messageID]; !exists {
 		r.emitCounts[messageID] = make(map[int]int)
 	}
+
+	// Generate bitmap of missing chunks (if threshold is met)
+	bitmap := r.generateBitmap(messageID)
 
 	// Find the earliest chunk with the lowest emit count
 	// Strategy: iterate through all chunks in order, track the one with lowest emit count
@@ -248,7 +334,10 @@ func (r *RsEncoder) EmitChunk(messageID string) (encode.Chunk, error) {
 	if selectedIndex != -1 {
 		chunkIndex := order[selectedIndex]
 		r.emitCounts[messageID][chunkIndex]++
-		return chunks[chunkIndex], nil
+		// Copy chunk and attach bitmap
+		chunk := chunks[chunkIndex]
+		chunk.Bitmap = bitmap
+		return chunk, nil
 	}
 
 	return nil, fmt.Errorf("no chunks found for message %s", messageID)
@@ -275,10 +364,7 @@ func (r *RsEncoder) GenerateThenAddChunks(messageID string, message []byte) (int
 	r.chunkCounts[messageID] = chunkCount
 
 	// Calculate parity chunks based on ratio
-	parityCount := int(float64(chunkCount) * r.config.ParityRatio)
-	if parityCount == 0 {
-		parityCount = 1 // At least 1 parity chunk
-	}
+	parityCount := r.getParityCount(chunkCount)
 
 	// Initialize chunk storage
 	r.chunks[messageID] = make(map[int]Chunk)
@@ -507,10 +593,7 @@ func (r *RsEncoder) ReconstructMessage(messageID string) ([]byte, error) {
 
 	// Create decoding matrix from the encoding matrix
 	// Calculate parity chunks for regenerating matrix
-	parityCount := int(float64(chunkCount) * r.config.ParityRatio)
-	if parityCount == 0 {
-		parityCount = 1
-	}
+	parityCount := r.getParityCount(chunkCount)
 	encodingMatrix := r.generateEncodingMatrix(chunkCount, parityCount)
 
 	// Step 1: Build the decoding matrix A
@@ -595,6 +678,7 @@ func (r *RsEncoder) DecodeChunk(messageID string, data []byte, extra []byte) (en
 		ChunkData:  data,
 		ChunkCount: chunkCount,
 		Extra:      rsExtra.Extra,
+		Bitmap:     rsExtra.IwantBitmap,
 	}, nil
 }
 

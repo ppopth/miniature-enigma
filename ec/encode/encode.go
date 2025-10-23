@@ -1,5 +1,9 @@
 package encode
 
+import (
+	"github.com/libp2p/go-libp2p/core/peer"
+)
+
 // Chunk represents a generic encoding chunk
 type Chunk interface {
 	Data() []byte
@@ -9,9 +13,11 @@ type Chunk interface {
 // Encoder defines the interface for erasure coding algorithms
 type Encoder interface {
 	// VerifyThenAddChunk verifies and stores a chunk if valid
-	VerifyThenAddChunk(chunk Chunk) bool
+	// peerID indicates which peer sent this chunk
+	VerifyThenAddChunk(peerID peer.ID, chunk Chunk) bool
 	// EmitChunk emits a chunk to be sent out from the stored chunks of a given message ID
-	EmitChunk(messageID string) (Chunk, error)
+	// targetPeerID indicates which peer will receive this chunk
+	EmitChunk(targetPeerID peer.ID, messageID string) (Chunk, error)
 	// GenerateThenAddChunks splits a message into chunks and stores them
 	GenerateThenAddChunks(messageID string, message []byte) (int, error)
 	// ReconstructMessage recovers the original message

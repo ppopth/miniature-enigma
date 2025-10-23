@@ -17,6 +17,7 @@ import (
 	"github.com/ethp2p/eth-ec-broadcast/host"
 	"github.com/ethp2p/eth-ec-broadcast/pubsub"
 	"github.com/herumi/bls-eth-go-binary/bls"
+	"github.com/libp2p/go-libp2p/core/peer"
 )
 
 // TestGenExtras tests the GenExtras method that generates Pedersen commitments
@@ -751,7 +752,7 @@ func BenchmarkPedersenVerify(b *testing.B) {
 	// Create a proper chunk
 	messageID := "bench-msg"
 	encoder.GenerateThenAddChunks(messageID, chunkData)
-	composedChunk, _ := encoder.EmitChunk(messageID)
+	composedChunk, _ := encoder.EmitChunk(peer.ID(""), messageID)
 
 	// Decode it back to get a chunk with proper coefficients
 	decodedChunk, err := encoder.DecodeChunk(messageID, composedChunk.Data(), composedChunk.EncodeExtra())
@@ -884,8 +885,8 @@ func BenchmarkPedersenEndToEnd(b *testing.B) {
 
 				// Verify all chunks
 				for i := 0; i < numChunks; i++ {
-					emittedChunk, _ := encoder.EmitChunk(messageID)
-					if !verifyEncoder.VerifyThenAddChunk(emittedChunk) {
+					emittedChunk, _ := encoder.EmitChunk(peer.ID(""), messageID)
+					if !verifyEncoder.VerifyThenAddChunk(peer.ID(""), emittedChunk) {
 						b.Fatal("Chunk verification failed")
 					}
 				}

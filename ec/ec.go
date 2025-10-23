@@ -4,9 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
-	"maps"
 	mrand "math/rand"
-	"slices"
 	"sync"
 
 	"github.com/ethp2p/eth-ec-broadcast/ec/encode"
@@ -136,18 +134,26 @@ func (router *EcRouter) Publish(message []byte) error {
 	router.received = append(router.received, message)
 	router.cond.Signal()
 
-	sendFuncs := slices.Collect(maps.Values(router.peers))
+	// Create a slice of peer IDs and send functions to maintain the mapping
+	type peerSend struct {
+		id       peer.ID
+		sendFunc pubsub.TopicSendFunc
+	}
+	var peerSends []peerSend
+	for peerID, sendFunc := range router.peers {
+		peerSends = append(peerSends, peerSend{id: peerID, sendFunc: sendFunc})
+	}
 
 	// Handle case when there are no peers connected
-	if len(sendFuncs) == 0 {
+	if len(peerSends) == 0 {
 		router.mutex.Unlock()
 		log.Debugf("Published message %s but no peers connected - message stored locally", messageID[:8])
 		return nil
 	}
 
 	// Shuffle the peers
-	mrand.Shuffle(len(sendFuncs), func(i, j int) {
-		sendFuncs[i], sendFuncs[j] = sendFuncs[j], sendFuncs[i]
+	mrand.Shuffle(len(peerSends), func(i, j int) {
+		peerSends[i], peerSends[j] = peerSends[j], peerSends[i]
 	})
 	router.mutex.Unlock()
 
@@ -155,8 +161,11 @@ func (router *EcRouter) Publish(message []byte) error {
 
 	// Broadcast random linear combinations to peers (round-robin for load balancing)
 	for i := 0; i < numChunks*router.params.PublishMultiplier; i++ {
+		// Get the target peer for this chunk
+		targetPeer := peerSends[sendFuncIndex]
+
 		// Create a random linear combination for this transmission
-		combinedChunk, err := router.encoder.EmitChunk(messageID)
+		combinedChunk, err := router.encoder.EmitChunk(targetPeer.id, messageID)
 		if err != nil {
 			log.Warnf("error publishing; %s", err)
 			// Skipping to the next peer
@@ -168,14 +177,14 @@ func (router *EcRouter) Publish(message []byte) error {
 			Data:      combinedChunk.Data(),
 			Extra:     combinedChunk.EncodeExtra(),
 		}
-		sendFuncs[sendFuncIndex](&pb.TopicRpc{
+		targetPeer.sendFunc(&pb.TopicRpc{
 			Ec: &pb.EcRpc{
 				Chunks: []*pb.EcRpc_Chunk{rpcChunk},
 			},
 		})
 
 		sendFuncIndex++
-		sendFuncIndex %= len(sendFuncs)
+		sendFuncIndex %= len(peerSends)
 	}
 	return nil
 }
@@ -228,17 +237,6 @@ func (router *EcRouter) sendChunk(messageID string, excludePeer peer.ID) {
 		return
 	}
 
-	combinedChunk, err := router.encoder.EmitChunk(messageID)
-	if err != nil {
-		log.Warnf("error forwarding; %s", err)
-		return
-	}
-	// Send the combined chunk to that peer
-	rpcChunk := &pb.EcRpc_Chunk{
-		MessageID: &messageID,
-		Data:      combinedChunk.Data(),
-		Extra:     combinedChunk.EncodeExtra(),
-	}
 	// Pick a random peer (excluding the sender)
 	selectedPeer := availablePeers[mrand.Intn(len(availablePeers))]
 
@@ -248,6 +246,18 @@ func (router *EcRouter) sendChunk(messageID string, excludePeer peer.ID) {
 		router.preventedChunks++
 		log.Infof("Prevented chunk send for message %s to peer %s (completion signal received)", messageID[:8], selectedPeer.String()[:8])
 		return
+	}
+
+	combinedChunk, err := router.encoder.EmitChunk(selectedPeer, messageID)
+	if err != nil {
+		log.Warnf("error forwarding; %s", err)
+		return
+	}
+	// Send the combined chunk to that peer
+	rpcChunk := &pb.EcRpc_Chunk{
+		MessageID: &messageID,
+		Data:      combinedChunk.Data(),
+		Extra:     combinedChunk.EncodeExtra(),
 	}
 
 	// Send the rpc
@@ -375,7 +385,7 @@ func (router *EcRouter) HandleIncomingRPC(peerID peer.ID, topicRPC *pb.TopicRpc)
 		}
 
 		// Use encoder to verify and add the chunk
-		if !router.encoder.VerifyThenAddChunk(decodedChunk) {
+		if !router.encoder.VerifyThenAddChunk(peerID, decodedChunk) {
 			log.Debugf("Chunk verification failed for message %s from peer %s (duplicate or invalid)", messageID[:8], peerID.String()[:8])
 			if canReconstruct {
 				router.incrementUnusedChunks()

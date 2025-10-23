@@ -33,14 +33,15 @@ message EcRpc {
 }
 
 message RlncExtra {
-    repeated bytes coefficients = 3;
-    optional bytes extra = 4; // chunk verifier extra data
+    repeated bytes coefficients = 1;
+    optional bytes extra = 2; // chunk verifier extra data
 }
 
 message RsExtra {
     optional uint32 index = 1;
-    optional uint32 chunkCount = 3; // number of data chunks for this message
-    optional bytes extra = 2; // chunk verifier extra data
+    optional uint32 chunkCount = 2; // number of data chunks for this message
+    optional bytes iwantBitmap = 3; // bitmap of missing chunks (bit i = 1 if chunk i is needed)
+    optional bytes extra = 4; // chunk verifier extra data
 }
 
 message FloodsubRpc {

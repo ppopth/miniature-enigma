@@ -9,6 +9,7 @@ import (
 	"github.com/ethp2p/eth-ec-broadcast/ec/encode"
 	"github.com/ethp2p/eth-ec-broadcast/ec/field"
 	"github.com/ethp2p/eth-ec-broadcast/pb"
+	"github.com/libp2p/go-libp2p/core/peer"
 )
 
 func TestNewRsEncoder(t *testing.T) {
@@ -204,7 +205,7 @@ func TestVerifyThenAddChunk(t *testing.T) {
 			ChunkCount: 2,
 		}
 
-		result := encoder.VerifyThenAddChunk(chunk)
+		result := encoder.VerifyThenAddChunk(peer.ID(""), chunk)
 		if !result {
 			t.Error("expected chunk to be added successfully")
 		}
@@ -225,13 +226,13 @@ func TestVerifyThenAddChunk(t *testing.T) {
 		}
 
 		// Add first time
-		result := freshEncoder.VerifyThenAddChunk(chunk)
+		result := freshEncoder.VerifyThenAddChunk(peer.ID(""), chunk)
 		if !result {
 			t.Error("expected first chunk to be added successfully")
 		}
 
 		// Try to add again
-		result = freshEncoder.VerifyThenAddChunk(chunk)
+		result = freshEncoder.VerifyThenAddChunk(peer.ID(""), chunk)
 		if result {
 			t.Error("expected duplicate chunk to be rejected")
 		}
@@ -245,7 +246,7 @@ func TestVerifyThenAddChunk(t *testing.T) {
 			ChunkCount: 0,
 		}
 
-		result := encoder.VerifyThenAddChunk(chunk)
+		result := encoder.VerifyThenAddChunk(peer.ID(""), chunk)
 		if result {
 			t.Error("expected chunk with invalid count to be rejected")
 		}
@@ -259,7 +260,7 @@ func TestVerifyThenAddChunk(t *testing.T) {
 			ChunkCount: 2,
 		}
 
-		result := encoder.VerifyThenAddChunk(chunk1)
+		result := encoder.VerifyThenAddChunk(peer.ID(""), chunk1)
 		if !result {
 			t.Error("expected first chunk to be added successfully")
 		}
@@ -271,7 +272,7 @@ func TestVerifyThenAddChunk(t *testing.T) {
 			ChunkCount: 3, // Different chunk count
 		}
 
-		result = encoder.VerifyThenAddChunk(chunk2)
+		result = encoder.VerifyThenAddChunk(peer.ID(""), chunk2)
 		if result {
 			t.Error("expected chunk with inconsistent count to be rejected")
 		}
@@ -295,7 +296,7 @@ func TestVerifyThenAddChunk(t *testing.T) {
 					ChunkCount: 2,
 				}
 
-				result := encoder.VerifyThenAddChunk(chunk)
+				result := encoder.VerifyThenAddChunk(peer.ID(""), chunk)
 				if result {
 					t.Error("expected chunk with invalid index to be rejected")
 				}
@@ -320,14 +321,14 @@ func TestEmitChunk(t *testing.T) {
 				ChunkData:  []byte{byte(i)},
 				ChunkCount: 2,
 			}
-			encoder.VerifyThenAddChunk(chunk)
+			encoder.VerifyThenAddChunk(peer.ID(""), chunk)
 		}
 
 		// Emissions should select the earliest chunk with lowest emit count
 		// Expected: 0, 1, 2, 0, 1, 2, ... (round-robin)
 		expectedIndices := []int{0, 1, 2, 0, 1, 2}
 		for i, expected := range expectedIndices {
-			emitted, err := encoder.EmitChunk(messageID)
+			emitted, err := encoder.EmitChunk(peer.ID(""), messageID)
 			if err != nil {
 				t.Fatalf("EmitChunk %d failed: %v", i+1, err)
 			}
@@ -343,7 +344,7 @@ func TestEmitChunk(t *testing.T) {
 			t.Fatalf("NewRsEncoder failed: %v", err)
 		}
 
-		_, err = encoder.EmitChunk("non-existent")
+		_, err = encoder.EmitChunk(peer.ID(""), "non-existent")
 		if err == nil {
 			t.Error("expected error for non-existent message")
 		}
@@ -385,7 +386,7 @@ func TestReconstructMessage(t *testing.T) {
 
 		// Add all chunks to second encoder
 		for _, chunk := range allChunks {
-			encoder2.VerifyThenAddChunk(chunk)
+			encoder2.VerifyThenAddChunk(peer.ID(""), chunk)
 		}
 
 		// Reconstruct using second encoder
@@ -433,7 +434,7 @@ func TestReconstructMessage(t *testing.T) {
 
 		// Add only one chunk (insufficient for reconstruction of 2 data chunks)
 		if len(allChunks) > 0 {
-			encoder2.VerifyThenAddChunk(allChunks[0])
+			encoder2.VerifyThenAddChunk(peer.ID(""), allChunks[0])
 		}
 
 		// Should fail with insufficient chunks
@@ -787,7 +788,7 @@ func TestReedSolomonCorrectness(t *testing.T) {
 				availableCount := 0
 				for _, chunk := range allChunks {
 					if !erasureSet[chunk.Index] {
-						encoder2.VerifyThenAddChunk(chunk)
+						encoder2.VerifyThenAddChunk(peer.ID(""), chunk)
 						availableCount++
 					}
 				}
@@ -874,7 +875,7 @@ func TestReedSolomonCorrectness(t *testing.T) {
 				for _, chunk := range allChunks {
 					for _, idx := range combo {
 						if chunk.Index == idx {
-							encoder2.VerifyThenAddChunk(chunk)
+							encoder2.VerifyThenAddChunk(peer.ID(""), chunk)
 							addedCount++
 							break
 						}
@@ -1044,7 +1045,7 @@ func TestReedSolomonWithPrimeField(t *testing.T) {
 		// First, get all chunks
 		allChunks := make([]Chunk, 0, totalChunks)
 		for i := 0; i < totalChunks; i++ {
-			chunk, err := encoder.EmitChunk(messageID)
+			chunk, err := encoder.EmitChunk(peer.ID(""), messageID)
 			if err != nil {
 				t.Fatalf("EmitChunk failed for index %d: %v", i, err)
 			}
@@ -1062,7 +1063,7 @@ func TestReedSolomonWithPrimeField(t *testing.T) {
 			if i == 1 || i == len(allChunks)-1 {
 				continue // Skip these chunks to simulate erasures
 			}
-			if !encoder2.VerifyThenAddChunk(chunk) {
+			if !encoder2.VerifyThenAddChunk(peer.ID(""), chunk) {
 				t.Fatalf("Failed to add chunk %d", i)
 			}
 		}
@@ -1123,7 +1124,7 @@ func TestChunkVerifierIntegration(t *testing.T) {
 
 		// Check that chunks have extra data
 		for i := 0; i < totalChunks; i++ {
-			chunk, err := encoder.EmitChunk(messageID)
+			chunk, err := encoder.EmitChunk(peer.ID(""), messageID)
 			if err != nil {
 				t.Fatalf("EmitChunk failed: %v", err)
 			}
@@ -1162,7 +1163,7 @@ func TestChunkVerifierIntegration(t *testing.T) {
 		}
 
 		// Verifier should reject this chunk
-		if encoder.VerifyThenAddChunk(chunk) {
+		if encoder.VerifyThenAddChunk(peer.ID(""), chunk) {
 			t.Error("Expected verifier to reject chunk, but it was accepted")
 		}
 
@@ -1205,7 +1206,7 @@ func TestChunkVerifierIntegration(t *testing.T) {
 
 		// Chunks should not have extra data
 		for i := 0; i < totalChunks; i++ {
-			chunk, err := encoder.EmitChunk(messageID)
+			chunk, err := encoder.EmitChunk(peer.ID(""), messageID)
 			if err != nil {
 				t.Fatalf("EmitChunk failed: %v", err)
 			}
@@ -1290,7 +1291,7 @@ func BenchmarkRsEmitChunk(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, err := encoder.EmitChunk(messageID)
+		_, err := encoder.EmitChunk(peer.ID(""), messageID)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -1325,13 +1326,13 @@ func BenchmarkRsVerifyThenAddChunk(b *testing.B) {
 	// Collect chunks
 	chunks := make([]encode.Chunk, numChunks)
 	for i := 0; i < numChunks; i++ {
-		chunks[i], _ = encoder1.EmitChunk(messageID)
+		chunks[i], _ = encoder1.EmitChunk(peer.ID(""), messageID)
 	}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		chunk := chunks[i%numChunks]
-		encoder2.VerifyThenAddChunk(chunk)
+		encoder2.VerifyThenAddChunk(peer.ID(""), chunk)
 	}
 }
 
@@ -1367,8 +1368,8 @@ func BenchmarkRsReconstructMessage(b *testing.B) {
 
 		// Add minimum number of chunks to decoder
 		for j := 0; j < numChunks; j++ {
-			chunk, _ := encoder.EmitChunk(messageIDs[i])
-			if !decoder.VerifyThenAddChunk(chunk) {
+			chunk, _ := encoder.EmitChunk(peer.ID(""), messageIDs[i])
+			if !decoder.VerifyThenAddChunk(peer.ID(""), chunk) {
 				break
 			}
 
@@ -1422,8 +1423,8 @@ func BenchmarkRsEndToEnd(b *testing.B) {
 
 		// Decoder receives minimum chunks
 		for j := 0; j < numChunks; j++ {
-			chunk, _ := encoder.EmitChunk(messageID)
-			decoder.VerifyThenAddChunk(chunk)
+			chunk, _ := encoder.EmitChunk(peer.ID(""), messageID)
+			decoder.VerifyThenAddChunk(peer.ID(""), chunk)
 
 			if decoder.GetChunkCount(messageID) >= decoder.GetMinChunksForReconstruction(messageID) {
 				break
@@ -1435,4 +1436,123 @@ func BenchmarkRsEndToEnd(b *testing.B) {
 			b.Fatal(err)
 		}
 	}
+}
+
+func TestBitmapCompletionSignal(t *testing.T) {
+	// Create Reed-Solomon encoder with GF(2^8)
+	irreducible := big.NewInt(0x11B)
+	f := field.NewBinaryField(8, irreducible)
+
+	config := &RsEncoderConfig{
+		ParityRatio:      0.5,
+		MessageChunkSize: 32,
+		NetworkChunkSize: 32,
+		ElementsPerChunk: 32,
+		Field:            f,
+		PrimitiveElement: f.FromBytes([]byte{0x03}),
+		BitmapThreshold:  0.5, // Start sending bitmap at 50%
+	}
+
+	encoder, err := NewRsEncoder(config)
+	if err != nil {
+		t.Fatalf("Failed to create encoder: %v", err)
+	}
+
+	// Create a message
+	messageID := "test-bitmap-message"
+	message := []byte("Hello, this is a test message!  ")
+
+	numChunks, err := encoder.GenerateThenAddChunks(messageID, message)
+	if err != nil {
+		t.Fatalf("Failed to generate chunks: %v", err)
+	}
+
+	// Create two peer IDs
+	peerAlice := peer.ID("alice")
+	peerBob := peer.ID("bob")
+
+	t.Run("emit to peer without bitmap", func(t *testing.T) {
+		// Should succeed - Alice hasn't sent bitmap yet
+		chunk, err := encoder.EmitChunk(peerAlice, messageID)
+		if err != nil {
+			t.Errorf("Expected success emitting to Alice, got error: %v", err)
+		}
+		if chunk == nil {
+			t.Error("Expected chunk to be returned")
+		}
+	})
+
+	t.Run("peer sends chunk with bitmap", func(t *testing.T) {
+		// Create a chunk with a bitmap from Alice
+		chunkWithBitmap := Chunk{
+			MessageID:  messageID,
+			Index:      0,
+			ChunkData:  make([]byte, 32),
+			ChunkCount: numChunks,
+			Bitmap:     []byte{0xFF}, // Non-empty bitmap signals completion
+		}
+
+		// Add the chunk from Alice
+		accepted := encoder.VerifyThenAddChunk(peerAlice, chunkWithBitmap)
+		if !accepted {
+			// It's ok if chunk is rejected as duplicate (index 0 may already exist)
+			// What matters is that the bitmap was recorded
+		}
+	})
+
+	t.Run("emit blocked after bitmap received", func(t *testing.T) {
+		// Should fail - Alice has sent bitmap
+		chunk, err := encoder.EmitChunk(peerAlice, messageID)
+		if err == nil {
+			t.Errorf("Expected error emitting to Alice after bitmap, but got success with chunk: %v", chunk)
+		}
+		if err != nil && chunk != nil {
+			t.Error("Expected nil chunk when error is returned")
+		}
+	})
+
+	t.Run("emit to different peer still works", func(t *testing.T) {
+		// Should succeed - Bob hasn't sent bitmap
+		chunk, err := encoder.EmitChunk(peerBob, messageID)
+		if err != nil {
+			t.Errorf("Expected success emitting to Bob, got error: %v", err)
+		}
+		if chunk == nil {
+			t.Error("Expected chunk to be returned")
+		}
+	})
+
+	t.Run("multiple peers tracked independently", func(t *testing.T) {
+		// Bob sends bitmap
+		chunkWithBitmap := Chunk{
+			MessageID:  messageID,
+			Index:      1,
+			ChunkData:  make([]byte, 32),
+			ChunkCount: numChunks,
+			Bitmap:     []byte{0xFF},
+		}
+
+		encoder.VerifyThenAddChunk(peerBob, chunkWithBitmap)
+
+		// Both Alice and Bob should now be blocked
+		_, err1 := encoder.EmitChunk(peerAlice, messageID)
+		_, err2 := encoder.EmitChunk(peerBob, messageID)
+
+		if err1 == nil {
+			t.Error("Expected error emitting to Alice")
+		}
+		if err2 == nil {
+			t.Error("Expected error emitting to Bob")
+		}
+
+		// A new peer should still work
+		peerCharlie := peer.ID("charlie")
+		chunk, err := encoder.EmitChunk(peerCharlie, messageID)
+		if err != nil {
+			t.Errorf("Expected success emitting to Charlie, got error: %v", err)
+		}
+		if chunk == nil {
+			t.Error("Expected chunk to be returned")
+		}
+	})
 }

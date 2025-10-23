@@ -11,6 +11,7 @@ import (
 	"github.com/ethp2p/eth-ec-broadcast/pb"
 
 	logging "github.com/ipfs/go-log/v2"
+	"github.com/libp2p/go-libp2p/core/peer"
 )
 
 var log = logging.Logger("rlnc")
@@ -100,7 +101,9 @@ func NewRlncEncoder(config *RlncEncoderConfig) (*RlncEncoder, error) {
 }
 
 // VerifyThenAddChunk verifies a chunk and stores it if valid and linearly independent
-func (r *RlncEncoder) VerifyThenAddChunk(chunk encode.Chunk) bool {
+func (r *RlncEncoder) VerifyThenAddChunk(peerID peer.ID, chunk encode.Chunk) bool {
+	_ = peerID // Not used in RLNC
+
 	// Convert generic chunk to RLNC chunk type
 	rlncChunk, ok := chunk.(Chunk)
 	if !ok {
@@ -151,7 +154,9 @@ func DefaultRlncEncoderConfig() *RlncEncoderConfig {
 }
 
 // EmitChunk emits a chunk to be sent out from the stored chunks of a given message ID
-func (r *RlncEncoder) EmitChunk(messageID string) (encode.Chunk, error) {
+func (r *RlncEncoder) EmitChunk(targetPeerID peer.ID, messageID string) (encode.Chunk, error) {
+	_ = targetPeerID // Not used in RLNC
+
 	// Get chunks from internal storage
 	r.mutex.Lock()
 	if len(r.chunks[messageID]) == 0 {
