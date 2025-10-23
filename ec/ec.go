@@ -135,13 +135,9 @@ func (router *EcRouter) Publish(message []byte) error {
 	router.cond.Signal()
 
 	// Create a slice of peer IDs and send functions to maintain the mapping
-	type peerSend struct {
-		id       peer.ID
-		sendFunc pubsub.TopicSendFunc
-	}
-	var peerSends []peerSend
+	var peerSends []pubsub.PeerSend
 	for peerID, sendFunc := range router.peers {
-		peerSends = append(peerSends, peerSend{id: peerID, sendFunc: sendFunc})
+		peerSends = append(peerSends, pubsub.PeerSend{ID: peerID, SendFunc: sendFunc})
 	}
 
 	// Handle case when there are no peers connected
@@ -165,7 +161,7 @@ func (router *EcRouter) Publish(message []byte) error {
 		targetPeer := peerSends[sendFuncIndex]
 
 		// Create a random linear combination for this transmission
-		combinedChunk, err := router.encoder.EmitChunk(targetPeer.id, messageID)
+		combinedChunk, err := router.encoder.EmitChunk(targetPeer.ID, messageID)
 		if err != nil {
 			log.Warnf("error publishing; %s", err)
 			// Skipping to the next peer
@@ -177,7 +173,7 @@ func (router *EcRouter) Publish(message []byte) error {
 			Data:      combinedChunk.Data(),
 			Extra:     combinedChunk.EncodeExtra(),
 		}
-		targetPeer.sendFunc(&pb.TopicRpc{
+		targetPeer.SendFunc(&pb.TopicRpc{
 			Ec: &pb.EcRpc{
 				Chunks: []*pb.EcRpc_Chunk{rpcChunk},
 			},
@@ -385,7 +381,8 @@ func (router *EcRouter) HandleIncomingRPC(peerID peer.ID, topicRPC *pb.TopicRpc)
 		}
 
 		// Use encoder to verify and add the chunk
-		if !router.encoder.VerifyThenAddChunk(peerID, decodedChunk) {
+		peerSend := pubsub.PeerSend{ID: peerID, SendFunc: router.peers[peerID]}
+		if !router.encoder.VerifyThenAddChunk(peerSend, decodedChunk) {
 			log.Debugf("Chunk verification failed for message %s from peer %s (duplicate or invalid)", messageID[:8], peerID.String()[:8])
 			if canReconstruct {
 				router.incrementUnusedChunks()

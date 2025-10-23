@@ -886,7 +886,7 @@ func BenchmarkPedersenEndToEnd(b *testing.B) {
 				// Verify all chunks
 				for i := 0; i < numChunks; i++ {
 					emittedChunk, _ := encoder.EmitChunk(peer.ID(""), messageID)
-					if !verifyEncoder.VerifyThenAddChunk(peer.ID(""), emittedChunk) {
+					if !verifyEncoder.VerifyThenAddChunk(pubsub.PeerSend{}, emittedChunk) {
 						b.Fatal("Chunk verification failed")
 					}
 				}

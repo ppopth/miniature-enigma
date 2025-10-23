@@ -1,6 +1,7 @@
 package encode
 
 import (
+	"github.com/ethp2p/eth-ec-broadcast/pubsub"
 	"github.com/libp2p/go-libp2p/core/peer"
 )
 
@@ -13,8 +14,8 @@ type Chunk interface {
 // Encoder defines the interface for erasure coding algorithms
 type Encoder interface {
 	// VerifyThenAddChunk verifies and stores a chunk if valid
-	// peerID indicates which peer sent this chunk
-	VerifyThenAddChunk(peerID peer.ID, chunk Chunk) bool
+	// peerSend contains the peer ID and send function to respond with an rpc if needed
+	VerifyThenAddChunk(peerSend pubsub.PeerSend, chunk Chunk) bool
 	// EmitChunk emits a chunk to be sent out from the stored chunks of a given message ID
 	// targetPeerID indicates which peer will receive this chunk
 	EmitChunk(targetPeerID peer.ID, messageID string) (Chunk, error)

@@ -9,6 +9,7 @@ import (
 	"github.com/ethp2p/eth-ec-broadcast/ec/encode"
 	"github.com/ethp2p/eth-ec-broadcast/ec/field"
 	"github.com/ethp2p/eth-ec-broadcast/pb"
+	"github.com/ethp2p/eth-ec-broadcast/pubsub"
 
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -101,8 +102,8 @@ func NewRlncEncoder(config *RlncEncoderConfig) (*RlncEncoder, error) {
 }
 
 // VerifyThenAddChunk verifies a chunk and stores it if valid and linearly independent
-func (r *RlncEncoder) VerifyThenAddChunk(peerID peer.ID, chunk encode.Chunk) bool {
-	_ = peerID // Not used in RLNC
+func (r *RlncEncoder) VerifyThenAddChunk(peerSend pubsub.PeerSend, chunk encode.Chunk) bool {
+	_ = peerSend // Not used in RLNC
 
 	// Convert generic chunk to RLNC chunk type
 	rlncChunk, ok := chunk.(Chunk)

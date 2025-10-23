@@ -8,6 +8,7 @@ import (
 	"github.com/ethp2p/eth-ec-broadcast/ec/encode"
 	"github.com/ethp2p/eth-ec-broadcast/ec/field"
 	"github.com/ethp2p/eth-ec-broadcast/pb"
+	"github.com/ethp2p/eth-ec-broadcast/pubsub"
 
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -156,7 +157,7 @@ func DefaultRsEncoderConfig() *RsEncoderConfig {
 }
 
 // VerifyThenAddChunk verifies and stores a chunk if valid
-func (r *RsEncoder) VerifyThenAddChunk(peerID peer.ID, chunk encode.Chunk) bool {
+func (r *RsEncoder) VerifyThenAddChunk(peerSend pubsub.PeerSend, chunk encode.Chunk) bool {
 	// Convert generic chunk to RS chunk type
 	rsChunk, ok := chunk.(Chunk)
 	if !ok {
@@ -173,7 +174,10 @@ func (r *RsEncoder) VerifyThenAddChunk(peerID peer.ID, chunk encode.Chunk) bool 
 			r.peerBitmaps[rsChunk.MessageID] = make(map[peer.ID]struct{})
 		}
 		// Mark that this peer has sent a bitmap for this message
-		r.peerBitmaps[rsChunk.MessageID][peerID] = struct{}{}
+		r.peerBitmaps[rsChunk.MessageID][peerSend.ID] = struct{}{}
+
+		// Send missing chunks to the peer
+		r.sendMissingChunks(peerSend, rsChunk.MessageID, rsChunk.Bitmap)
 	}
 
 	// Initialize chunk storage for this message if needed
@@ -227,6 +231,70 @@ func (r *RsEncoder) VerifyThenAddChunk(peerID peer.ID, chunk encode.Chunk) bool 
 	r.chunkOrder[rsChunk.MessageID] = append(r.chunkOrder[rsChunk.MessageID], rsChunk.Index)
 
 	return true
+}
+
+// sendMissingChunks parses the bitmap and sends the requested missing chunks to the peer
+// Must be called with r.mutex held
+func (r *RsEncoder) sendMissingChunks(peerSend pubsub.PeerSend, messageID string, bitmap []byte) {
+	// Check if we have chunks for this message
+	chunks, exists := r.chunks[messageID]
+	if !exists || len(chunks) == 0 {
+		log.Debugf("No chunks available to send for message %s", messageID[:8])
+		return
+	}
+
+	// Parse the bitmap to find missing chunk indices
+	var missingIndices []int
+	for byteIdx, b := range bitmap {
+		for bitIdx := 0; bitIdx < 8; bitIdx++ {
+			if (b & (1 << bitIdx)) != 0 {
+				chunkIdx := byteIdx*8 + bitIdx
+				missingIndices = append(missingIndices, chunkIdx)
+			}
+		}
+	}
+
+	if len(missingIndices) == 0 {
+		log.Debugf("Bitmap from peer %s for message %s indicates no missing chunks", peerSend.ID, messageID[:8])
+		return
+	}
+
+	log.Debugf("Peer %s requesting %d missing chunks for message %s", peerSend.ID, len(missingIndices), messageID[:8])
+
+	// Prepare chunks to send
+	var chunksToSend []*pb.EcRpc_Chunk
+	for _, idx := range missingIndices {
+		chunk, have := chunks[idx]
+		if !have {
+			// We don't have this chunk, skip it
+			continue
+		}
+
+		// Create RPC chunk
+		rpcChunk := &pb.EcRpc_Chunk{
+			MessageID: &messageID,
+			Data:      chunk.Data(),
+			Extra:     chunk.EncodeExtra(),
+		}
+		chunksToSend = append(chunksToSend, rpcChunk)
+	}
+
+	if len(chunksToSend) == 0 {
+		log.Debugf("None of the requested chunks are available for message %s", messageID[:8])
+		return
+	}
+
+	// Send the chunks to the peer (if send function is available)
+	if peerSend.SendFunc != nil {
+		peerSend.SendFunc(&pb.TopicRpc{
+			Ec: &pb.EcRpc{
+				Chunks: chunksToSend,
+			},
+		})
+		log.Infof("Sent %d missing chunks to peer %s for message %s", len(chunksToSend), peerSend.ID, messageID[:8])
+	} else {
+		log.Debugf("Cannot send missing chunks to peer %s - no send function available", peerSend.ID)
+	}
 }
 
 // getParityCount returns the number of parity chunks for a given data chunk count

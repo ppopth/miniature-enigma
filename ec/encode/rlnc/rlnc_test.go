@@ -8,6 +8,7 @@ import (
 
 	"github.com/ethp2p/eth-ec-broadcast/ec/encode"
 	"github.com/ethp2p/eth-ec-broadcast/ec/field"
+	"github.com/ethp2p/eth-ec-broadcast/pubsub"
 	"github.com/libp2p/go-libp2p/core/peer"
 )
 
@@ -143,7 +144,7 @@ func TestRlncEncoderVerifyThenAddChunk(t *testing.T) {
 
 	// Add chunks to second encoder
 	for _, chunk := range chunks {
-		if !encoder2.VerifyThenAddChunk(peer.ID(""), chunk) {
+		if !encoder2.VerifyThenAddChunk(pubsub.PeerSend{}, chunk) {
 			t.Fatal("failed to add valid chunk")
 		}
 	}
@@ -201,7 +202,7 @@ func TestRlncEncoderEmitChunk(t *testing.T) {
 
 	// Add chunks to second encoder
 	for _, chunk := range combinedChunks {
-		if !encoder2.VerifyThenAddChunk(peer.ID(""), chunk) {
+		if !encoder2.VerifyThenAddChunk(pubsub.PeerSend{}, chunk) {
 			t.Fatal("failed to add valid chunk")
 		}
 	}
@@ -557,7 +558,7 @@ func BenchmarkRlncVerifyThenAddChunk(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		// Use a chunk from the composed chunks
 		chunk := composedChunks[i%len(composedChunks)]
-		encoder.VerifyThenAddChunk(peer.ID(""), chunk)
+		encoder.VerifyThenAddChunk(pubsub.PeerSend{}, chunk)
 	}
 }
 
@@ -598,7 +599,7 @@ func BenchmarkRlncReconstructMessage(b *testing.B) {
 
 				// Add minimum required chunks
 				for _, chunk := range chunks {
-					decoder.VerifyThenAddChunk(peer.ID(""), chunk)
+					decoder.VerifyThenAddChunk(pubsub.PeerSend{}, chunk)
 				}
 
 				b.StartTimer()
@@ -693,7 +694,7 @@ func BenchmarkRlncWithBinaryField(b *testing.B) {
 		// Encoder emits chunks, decoder verifies and adds them
 		for j := 0; j < numChunks; j++ {
 			chunk, _ := encoder.EmitChunk(peer.ID(""), messageID)
-			decoder.VerifyThenAddChunk(peer.ID(""), chunk)
+			decoder.VerifyThenAddChunk(pubsub.PeerSend{}, chunk)
 		}
 
 		_, err = decoder.ReconstructMessage(messageID)

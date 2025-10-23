@@ -15,6 +15,12 @@ import (
 // TopicSendFunc is a function that sends topic RPC messages
 type TopicSendFunc func(*pb.TopicRpc)
 
+// PeerSend holds a peer ID and its send function
+type PeerSend struct {
+	ID       peer.ID
+	SendFunc TopicSendFunc
+}
+
 // Topic manages a single pubsub topic and its subscriptions
 type Topic struct {
 	ctx    context.Context
