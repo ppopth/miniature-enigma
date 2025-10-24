@@ -4,9 +4,10 @@
 
 # Default parameters
 NODE_COUNT ?= 10
-MSG_SIZE ?= 64
+MSG_SIZE ?= 256
 MSG_COUNT ?= 5
 PROGRESS ?= false
+LOG_LEVEL ?= info
 
 # Check dependencies
 check-deps:
@@ -26,14 +27,14 @@ build: check-deps
 # Generate network graph and Shadow configuration
 generate-config: check-deps
 	@echo "Generating Shadow network configuration for $(NODE_COUNT) nodes (floodsub)..."
-	python3 ../network_graph.py $(NODE_COUNT) $(MSG_SIZE) $(MSG_COUNT) floodsub
+	python3 ../network_graph.py $(NODE_COUNT) $(MSG_SIZE) $(MSG_COUNT) floodsub "--log-level $(LOG_LEVEL)"
 	@test -f shadow-floodsub.yaml && test -f graph.gml || (echo "Config generation failed" && exit 1)
 	@echo "Configuration generated"
 
 # Generate network graph and Shadow configuration for streams
 generate-config-streams: check-deps
 	@echo "Generating Shadow network configuration for $(NODE_COUNT) nodes (floodsub with streams)..."
-	python3 ../network_graph.py $(NODE_COUNT) $(MSG_SIZE) $(MSG_COUNT) floodsub --use-streams
+	python3 ../network_graph.py $(NODE_COUNT) $(MSG_SIZE) $(MSG_COUNT) floodsub "--use-streams --log-level $(LOG_LEVEL)"
 	@test -f shadow-floodsub.yaml && test -f graph.gml || (echo "Config generation failed" && exit 1)
 	@echo "Configuration generated (with QUIC streams)"
 
@@ -78,14 +79,17 @@ help:
 	@echo "=========================================="
 	@echo ""
 	@echo "Targets:"
-	@echo "  check-deps      - Check required dependencies"
-	@echo "  build           - Build the floodsub simulation binary"
-	@echo "  generate-config - Generate Shadow configuration"
-	@echo "  run-sim         - Run complete Shadow simulation"
-	@echo "  test            - Test simulation results from Shadow logs"
-	@echo "  all             - Run simulation and test results"
-	@echo "  clean           - Clean up build artifacts and results"
-	@echo "  help            - Show this help message"
+	@echo "  check-deps              - Check required dependencies"
+	@echo "  build                   - Build the floodsub simulation binary"
+	@echo "  generate-config         - Generate Shadow configuration (QUIC datagrams)"
+	@echo "  generate-config-streams - Generate Shadow configuration (QUIC streams)"
+	@echo "  run-sim                 - Run complete Shadow simulation (QUIC datagrams)"
+	@echo "  run-sim-streams         - Run complete Shadow simulation (QUIC streams)"
+	@echo "  test                    - Test simulation results from Shadow logs"
+	@echo "  all                     - Run simulation with datagrams and test results"
+	@echo "  all-streams             - Run simulation with streams and test results"
+	@echo "  clean                   - Clean up build artifacts and results"
+	@echo "  help                    - Show this help message"
 	@echo ""
 	@echo "Configuration variables:"
 	@echo "  NODE_COUNT      - Number of nodes (default: $(NODE_COUNT))"
@@ -94,7 +98,9 @@ help:
 	@echo "  PROGRESS        - Show Shadow progress bar (default: $(PROGRESS))"
 	@echo ""
 	@echo "Examples:"
-	@echo "  make all                                    # Run with defaults"
-	@echo "  make run-sim NODE_COUNT=20 MSG_SIZE=128    # Custom parameters"
+	@echo "  make all                                    # Run with defaults (QUIC datagrams)"
+	@echo "  make all-streams                            # Run with QUIC streams"
+	@echo "  make run-sim NODE_COUNT=20 MSG_SIZE=512    # Custom parameters"
+	@echo "  make run-sim-streams NODE_COUNT=20         # Run with QUIC streams"
 	@echo "  make run-sim PROGRESS=true                 # Run with progress bar"
 	@echo "  make test                                  # Test existing results"

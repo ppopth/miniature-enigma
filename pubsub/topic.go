@@ -167,6 +167,7 @@ func (t *Topic) addPeer(peerID peer.ID, sender host.Sender) {
 
 		sendRPC(&rpc, sender)
 	})
+	log.Debugf("peer %s added to topic %s (total peers: %d)", peerID, t.topicName, len(t.peers))
 }
 
 // removePeer removes a peer from this topic
@@ -176,6 +177,7 @@ func (t *Topic) removePeer(peerID peer.ID) {
 
 	delete(t.peers, peerID)
 	t.router.RemovePeer(peerID)
+	log.Debugf("peer %s removed from topic %s (total peers: %d)", peerID, t.topicName, len(t.peers))
 }
 
 // hasPeer checks if a peer is connected to this topic

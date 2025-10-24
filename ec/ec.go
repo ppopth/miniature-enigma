@@ -39,8 +39,10 @@ func NewEcRouter(encoder encode.Encoder, opts ...EcOption) (*EcRouter, error) {
 		encoder:       encoder,
 		messageIDFunc: hashSha256, // SHA-256 gives good distribution for message IDs
 
-		peers:    make(map[peer.ID]pubsub.TopicSendFunc),
-		notified: make(map[string]struct{}),
+		peers:                 make(map[peer.ID]pubsub.TopicSendFunc),
+		peerCompletedMessages: make(map[peer.ID]map[string]struct{}),
+		notified:              make(map[string]struct{}),
+		completionSignalsSent: make(map[string]struct{}),
 	}
 
 	router.cond = sync.NewCond(&router.mutex)
@@ -48,7 +50,8 @@ func NewEcRouter(encoder encode.Encoder, opts ...EcOption) (*EcRouter, error) {
 	// Set reasonable defaults for router-specific parameters
 	router.params = EcParams{
 		PublishMultiplier: 2, // Send 2x redundancy when publishing
-		ForwardMultiplier: 2, // Forward 2 chunks per useful chunk received
+		ForwardMultiplier: 2, // Forward 2 chunks per innovative chunk received
+		// DisableCompletionSignal defaults to false (signals are sent by default)
 	}
 
 	for _, opt := range opts {
@@ -92,10 +95,18 @@ type EcRouter struct {
 	params        EcParams  // Configuration parameters
 	messageIDFunc MsgIdFunc // How we identify messages
 
-	peers map[peer.ID]pubsub.TopicSendFunc // Active peer connections
+	peers                 map[peer.ID]pubsub.TopicSendFunc // Active peer connections
+	peerCompletedMessages map[peer.ID]map[string]struct{}  // Track which peers have completed which messages
 
-	received [][]byte            // Queue of fully reconstructed messages
-	notified map[string]struct{} // Track which messages have been notified to prevent duplicates
+	received              [][]byte            // Queue of fully reconstructed messages
+	notified              map[string]struct{} // Track which messages have been notified to prevent duplicates
+	completionSignalsSent map[string]struct{} // Track which messages have had completion signals sent
+
+	preventedChunks int // Count of chunks prevented from being sent due to completion signals
+
+	usefulChunks  uint64 // Number of useful chunks (received before reconstruction possible)
+	uselessChunks uint64 // Number of useless chunks (invalid/duplicate/failed before reconstruction possible)
+	unusedChunks  uint64 // Number of unused chunks (received after reconstruction already possible)
 }
 
 type EcParams struct {
@@ -103,8 +114,12 @@ type EcParams struct {
 	// the multiplier is 2 and the number of chunks of the published message is 8, there will
 	// be 2*8 = 16 chunks sent in total.
 	PublishMultiplier int
-	// Every time a new useful chunk is receive, we send out as many new chunks as this number.
+	// Every time a new innovative chunk is receive, we send out as many new chunks as this number.
 	ForwardMultiplier int
+	// Whether to disable sending completion signals to peers when a message is fully reconstructed.
+	// By default (false), completion signals are sent to allow peers to stop sending chunks for
+	// completed messages, reducing unused chunk overhead. Set to true to disable this feature.
+	DisableCompletionSignal bool
 }
 
 // Publish takes a message, splits it into chunks, and broadcasts linear combinations
@@ -165,6 +180,29 @@ func (router *EcRouter) Publish(message []byte) error {
 	return nil
 }
 
+// broadcastCompletionSignal notifies all peers that this node has completed reconstruction for a message.
+// This allows peers to stop sending chunks for this message, reducing unused chunk overhead.
+func (router *EcRouter) broadcastCompletionSignal(messageID string) {
+	router.mutex.Lock()
+	// Get a copy of peer send functions to broadcast completion signal
+	peerSendFuncs := make(map[peer.ID]pubsub.TopicSendFunc)
+	for peerID, sendFunc := range router.peers {
+		peerSendFuncs[peerID] = sendFunc
+	}
+	router.mutex.Unlock()
+
+	// Broadcast completion signal to all peers (outside the lock to avoid deadlocks)
+	log.Debugf("Broadcasting completion signal for message %s to %d peers", messageID[:8], len(peerSendFuncs))
+	for peerID, sendFunc := range peerSendFuncs {
+		sendFunc(&pb.TopicRpc{
+			Ec: &pb.EcRpc{
+				CompletedMessages: []string{messageID},
+			},
+		})
+		log.Debugf("Sent completion signal for message %s to peer %s", messageID[:8], peerID.String()[:8])
+	}
+}
+
 // sendChunk forwards a random linear combination to help message propagation
 func (router *EcRouter) sendChunk(messageID string, excludePeer peer.ID) {
 	router.mutex.Lock()
@@ -203,6 +241,15 @@ func (router *EcRouter) sendChunk(messageID string, excludePeer peer.ID) {
 	}
 	// Pick a random peer (excluding the sender)
 	selectedPeer := availablePeers[mrand.Intn(len(availablePeers))]
+
+	// Check if this peer has already completed this message right before sending
+	if _, completed := router.peerCompletedMessages[selectedPeer][messageID]; completed {
+		// This chunk would have been sent but was prevented by completion signal
+		router.preventedChunks++
+		log.Infof("Prevented chunk send for message %s to peer %s (completion signal received)", messageID[:8], selectedPeer.String()[:8])
+		return
+	}
+
 	// Send the rpc
 	router.peers[selectedPeer](&pb.TopicRpc{
 		Ec: &pb.EcRpc{
@@ -273,6 +320,7 @@ func (router *EcRouter) AddPeer(peerID peer.ID, sendFunc pubsub.TopicSendFunc) {
 	defer router.mutex.Unlock()
 
 	router.peers[peerID] = sendFunc
+	router.peerCompletedMessages[peerID] = make(map[string]struct{})
 }
 
 // RemovePeer unregisters a peer (cleanup when they disconnect)
@@ -281,6 +329,7 @@ func (router *EcRouter) RemovePeer(peerID peer.ID) {
 	defer router.mutex.Unlock()
 
 	delete(router.peers, peerID)
+	delete(router.peerCompletedMessages, peerID)
 }
 
 // HandleIncomingRPC processes chunks from peers and manages forwarding
@@ -289,8 +338,18 @@ func (router *EcRouter) HandleIncomingRPC(peerID peer.ID, topicRPC *pb.TopicRpc)
 	router.mutex.Lock()
 
 	ecRPC := topicRPC.GetEc()
+
+	// Process completion signals from peer
+	for _, completedMessageID := range ecRPC.GetCompletedMessages() {
+		log.Debugf("Received completion signal for message %s from peer %s", completedMessageID[:8], peerID.String()[:8])
+		router.peerCompletedMessages[peerID][completedMessageID] = struct{}{}
+	}
+
 	messagesToNotify := make(map[string]struct{})
 	messagesToSend := make(map[string]int) // The number of chunks to send out indexed by message IDs
+	messagesToSendCompletionSignal := make(map[string]struct{})
+	disableCompletionSignal := router.params.DisableCompletionSignal
+
 	for _, chunkRPC := range ecRPC.GetChunks() {
 		messageID := chunkRPC.GetMessageID()
 		chunkData := chunkRPC.GetData()
@@ -298,30 +357,67 @@ func (router *EcRouter) HandleIncomingRPC(peerID peer.ID, topicRPC *pb.TopicRpc)
 
 		log.Debugf("Received chunk for message %s from peer %s", messageID[:8], peerID.String()[:8])
 
+		// Check if we can already reconstruct BEFORE adding this chunk
+		chunkCount := router.encoder.GetChunkCount(messageID)
+		minChunks := router.encoder.GetMinChunksForReconstruction(messageID)
+		canReconstruct := minChunks > 0 && chunkCount >= minChunks
+
 		// Decode the chunk using the encoder
 		decodedChunk, err := router.encoder.DecodeChunk(messageID, chunkData, extraData)
 		if err != nil {
 			log.Debugf("Failed to decode chunk for message %s from peer %s: %v", messageID[:8], peerID.String()[:8], err)
+			if canReconstruct {
+				router.incrementUnusedChunks()
+			} else {
+				router.incrementUselessChunks()
+			}
 			continue
 		}
 
 		// Use encoder to verify and add the chunk
 		if !router.encoder.VerifyThenAddChunk(decodedChunk) {
 			log.Debugf("Chunk verification failed for message %s from peer %s (duplicate or invalid)", messageID[:8], peerID.String()[:8])
+			if canReconstruct {
+				router.incrementUnusedChunks()
+			} else {
+				router.incrementUselessChunks()
+			}
 			continue
 		}
 
 		log.Debugf("Valid chunk accepted for message %s from peer %s", messageID[:8], peerID.String()[:8])
 
-		// Useful chunk! Forward it to help network propagation
+		// Track chunk statistics - chunk was accepted
+		if canReconstruct {
+			router.incrementUnusedChunks()
+		} else {
+			router.incrementUsefulChunks()
+		}
+
+		// Innovative chunk! Forward it to help network propagation
 		messagesToSend[messageID] += router.params.ForwardMultiplier
+
+		// Update chunk counts after adding the new chunk
+		chunkCount = router.encoder.GetChunkCount(messageID)
+		minChunks = router.encoder.GetMinChunksForReconstruction(messageID)
+		chunksBeforeCompletion := router.encoder.GetChunksBeforeCompletion(messageID)
+
 		// Check if we have enough chunks to reconstruct the message
-		if router.encoder.GetChunkCount(messageID) >= router.encoder.GetMinChunksForReconstruction(messageID) {
+		if chunkCount >= minChunks {
 			if _, err := router.encoder.ReconstructMessage(messageID); err == nil {
 				log.Debugf("Successfully reconstructed message %s", messageID[:8])
 				messagesToNotify[messageID] = struct{}{}
 			} else {
 				log.Debugf("Failed to reconstruct message %s: %v", messageID[:8], err)
+			}
+		}
+
+		// Check if we should send completion signal (after receiving all expected chunks)
+		if !disableCompletionSignal && chunkCount >= chunksBeforeCompletion {
+			// Check if we've already sent completion signal for this message
+			if _, alreadySent := router.completionSignalsSent[messageID]; !alreadySent {
+				messagesToSendCompletionSignal[messageID] = struct{}{}
+				router.completionSignalsSent[messageID] = struct{}{}
 			}
 		}
 	}
@@ -335,6 +431,9 @@ func (router *EcRouter) HandleIncomingRPC(peerID peer.ID, topicRPC *pb.TopicRpc)
 	for messageID := range messagesToNotify {
 		router.notifyMessage(messageID)
 	}
+	for messageID := range messagesToSendCompletionSignal {
+		router.broadcastCompletionSignal(messageID)
+	}
 }
 
 // Close shuts down the router and wakes up any waiting Next() calls
@@ -342,6 +441,27 @@ func (router *EcRouter) Close() error {
 	router.cancel()
 	router.cond.Broadcast()
 	return nil
+}
+
+// incrementUsefulChunks increments the useful chunk counter and logs the event
+// Must be called while holding router.mutex
+func (router *EcRouter) incrementUsefulChunks() {
+	router.usefulChunks++
+	log.Infof("Chunk event: Useful: %d, Useless: %d, Unused: %d", router.usefulChunks, router.uselessChunks, router.unusedChunks)
+}
+
+// incrementUselessChunks increments the useless chunk counter and logs the event
+// Must be called while holding router.mutex
+func (router *EcRouter) incrementUselessChunks() {
+	router.uselessChunks++
+	log.Infof("Chunk event: Useful: %d, Useless: %d, Unused: %d", router.usefulChunks, router.uselessChunks, router.unusedChunks)
+}
+
+// incrementUnusedChunks increments the unused chunk counter and logs the event
+// Must be called while holding router.mutex
+func (router *EcRouter) incrementUnusedChunks() {
+	router.unusedChunks++
+	log.Infof("Chunk event: Useful: %d, Useless: %d, Unused: %d", router.usefulChunks, router.uselessChunks, router.unusedChunks)
 }
 
 // hashSha256 is our default message ID function - SHA-256 hex string

@@ -2,27 +2,23 @@ package main
 
 import (
 	"context"
-	"crypto/sha256"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net"
-	"net/netip"
 	"time"
 
-	"github.com/ethp2p/eth-ec-broadcast/floodsub"
-	"github.com/ethp2p/eth-ec-broadcast/host"
-	"github.com/ethp2p/eth-ec-broadcast/pubsub"
+	"github.com/libp2p/go-libp2p"
+	pubsub "github.com/libp2p/go-libp2p-pubsub"
+	"github.com/libp2p/go-libp2p/core/crypto"
+	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/multiformats/go-multiaddr"
+
 	"github.com/ethp2p/eth-ec-broadcast/shadow/topology"
 
 	logging "github.com/ipfs/go-log/v2"
 )
-
-func hashSha256(buf []byte) string {
-	h := sha256.New()
-	h.Write(buf)
-	return fmt.Sprintf("%x", h.Sum(nil))
-}
 
 func main() {
 	var (
@@ -31,16 +27,15 @@ func main() {
 		msgCount     = flag.Int("msg-count", 5, "Number of messages to publish")
 		msgSize      = flag.Int("msg-size", 32, "Size of each message in bytes")
 		topologyFile = flag.String("topology-file", "", "Path to topology JSON file (if not specified, uses linear topology)")
-		useStreams   = flag.Bool("use-streams", false, "Use QUIC streams instead of datagrams")
 		logLevel     = flag.String("log-level", "info", "Log level (debug, info, warn, error)")
 	)
 	flag.Parse()
 
 	// Setup logging
-	log.SetPrefix(fmt.Sprintf("[floodsub-node-%d] ", *nodeID))
+	log.SetPrefix(fmt.Sprintf("[gossipsub-node-%d] ", *nodeID))
 	log.SetFlags(log.LstdFlags | log.Lshortfile | log.Lmicroseconds)
 
-	// Set log level for all subsystems
+	// Set log level for all subsystems (including libp2p and pubsub)
 	level, err := logging.LevelFromString(*logLevel)
 	if err != nil {
 		log.Printf("Invalid log level %q, using info", *logLevel)
@@ -69,52 +64,63 @@ func main() {
 		log.Printf("Using default linear topology")
 	}
 
-	log.Printf("Starting eth-ec-broadcast floodsub simulation")
+	log.Printf("Starting libp2p GossipSub simulation")
 	log.Printf("Node ID: %d, Total nodes: %d, Messages: %d, Message size: %d bytes",
 		*nodeID, *nodeCount, *msgCount, *msgSize)
 	log.Printf("Topology: %s", topo.GetDescription())
 
-	// Create host with deterministic port based on node ID
-	// Enable Shadow compatibility mode
-	hostPort := uint16(8000 + *nodeID)
+	ctx := context.Background()
 
-	// Configure transport mode
-	transportMode := host.TransportDatagram
-	transportName := "datagram"
-	if *useStreams {
-		transportMode = host.TransportStream
-		transportName = "stream"
-	}
-
-	h, err := host.NewHost(
-		host.WithAddrPort(netip.AddrPortFrom(netip.IPv4Unspecified(), hostPort)),
-		host.WithShadowMode(),
-		host.WithTransportMode(transportMode),
+	// Generate a deterministic private key based on node ID
+	// This ensures consistent peer IDs across simulation runs
+	priv, _, err := crypto.GenerateEd25519Key(
+		deterministicRandSource(*nodeID),
 	)
 	if err != nil {
-		log.Fatalf("Failed to create host: %v", err)
+		log.Fatalf("Failed to generate key: %v", err)
+	}
+
+	// Create libp2p host with deterministic port based on node ID
+	hostPort := 8000 + *nodeID
+	listenAddr := fmt.Sprintf("/ip4/0.0.0.0/tcp/%d", hostPort)
+
+	h, err := libp2p.New(
+		libp2p.Identity(priv),
+		libp2p.ListenAddrStrings(listenAddr),
+	)
+	if err != nil {
+		log.Fatalf("Failed to create libp2p host: %v", err)
 	}
 	defer h.Close()
 
-	log.Printf("Host created with ID: %s, listening on port: %d (Shadow mode, transport: %s)", h.ID(), hostPort, transportName)
+	log.Printf("Host created with ID: %s, listening on port: %d", h.ID(), hostPort)
 
-	// Create PubSub instance
-	ps, err := pubsub.NewPubSub(h)
+	// Create GossipSub instance with Ethereum consensus-specs parameters
+	// Parameters from: https://github.com/ethereum/consensus-specs/blob/master/specs/phase0/p2p-interface.md
+	// Start with default parameters and override specific values
+	gossipsubParams := pubsub.DefaultGossipSubParams()
+	gossipsubParams.D = 8                                      // topic stable mesh target count
+	gossipsubParams.Dlo = 6                                    // topic stable mesh low watermark
+	gossipsubParams.Dhi = 12                                   // topic stable mesh high watermark
+	gossipsubParams.Dlazy = 6                                  // gossip target
+	gossipsubParams.HeartbeatInterval = 700 * time.Millisecond // 0.7 seconds
+	gossipsubParams.FanoutTTL = 60 * time.Second               // 60 seconds
+	gossipsubParams.HistoryLength = 6                          // mcache_len: number of windows to retain full messages
+	gossipsubParams.HistoryGossip = 3                          // mcache_gossip: number of windows to gossip about
+
+	ps, err := pubsub.NewGossipSub(ctx, h,
+		pubsub.WithGossipSubParams(gossipsubParams),
+	)
 	if err != nil {
-		log.Fatalf("Failed to create pubsub: %v", err)
+		log.Fatalf("Failed to create gossipsub: %v", err)
 	}
-	defer ps.Close()
-
-	// Create floodsub router
-	router := floodsub.NewFloodsubRouter(hashSha256)
 
 	// Join topic
-	topicName := "floodsub-sim"
-	topic, err := ps.Join(topicName, router)
+	topicName := "gossipsub-sim"
+	topic, err := ps.Join(topicName)
 	if err != nil {
 		log.Fatalf("Failed to join topic: %v", err)
 	}
-	defer topic.Close()
 
 	// Subscribe to topic
 	sub, err := topic.Subscribe()
@@ -144,23 +150,30 @@ func main() {
 			return
 		}
 
-		// Use the first resolved address
-		ip, err := netip.ParseAddr(addrs[0])
+		// Create multiaddr
+		maddr, err := multiaddr.NewMultiaddr(fmt.Sprintf("/ip4/%s/tcp/%d", addrs[0], port))
 		if err != nil {
-			log.Printf("Failed to parse IP address %s: %v", addrs[0], err)
+			log.Printf("Failed to create multiaddr: %v", err)
 			return
 		}
 
-		peerAddr := &net.UDPAddr{
-			IP:   ip.AsSlice(),
-			Port: port,
+		// Parse peer ID (we need to know it in advance - use deterministic key generation)
+		peerPriv, _, _ := crypto.GenerateEd25519Key(
+			deterministicRandSource(peerNodeID),
+		)
+		peerID, _ := peer.IDFromPrivateKey(peerPriv)
+
+		// Add peer address to peerstore
+		peerInfo := peer.AddrInfo{
+			ID:    peerID,
+			Addrs: []multiaddr.Multiaddr{maddr},
 		}
 
-		err = h.Connect(context.Background(), peerAddr)
+		err = h.Connect(ctx, peerInfo)
 		if err != nil {
-			log.Printf("Failed to connect to node %d (%s): %v", peerNodeID, peerAddr, err)
+			log.Printf("Failed to connect to node %d: %v", peerNodeID, err)
 		} else {
-			log.Printf("Connected to node %d at %s", peerNodeID, peerAddr)
+			log.Printf("Connected to node %d (peer ID: %s)", peerNodeID, peerID)
 		}
 	}
 
@@ -188,13 +201,13 @@ func main() {
 	receivedCount := 0
 	go func() {
 		for {
-			msg, err := sub.Next(context.Background())
+			msg, err := sub.Next(ctx)
 			if err != nil {
 				log.Printf("Error receiving message: %v", err)
 				return
 			}
 			receivedCount++
-			log.Printf("Received message %d: %s", receivedCount, string(msg))
+			log.Printf("Received message %d: %s", receivedCount, string(msg.Data))
 		}
 	}()
 
@@ -216,7 +229,7 @@ func main() {
 				}
 			}
 
-			err := topic.Publish(msg)
+			err := topic.Publish(ctx, msg)
 			if err != nil {
 				log.Printf("Failed to publish message %d: %v", i, err)
 			} else {
@@ -234,3 +247,19 @@ func main() {
 	// Block forever to keep the process alive
 	select {}
 }
+
+// deterministicRandSource creates a deterministic random source based on a seed
+type deterministicRandSource int
+
+func (d deterministicRandSource) Read(p []byte) (int, error) {
+	// Simple deterministic "random" generation based on seed
+	seed := int(d)
+	for i := range p {
+		seed = (seed*1103515245 + 12345) & 0x7fffffff
+		p[i] = byte(seed >> 16)
+	}
+	return len(p), nil
+}
+
+// Ensure it implements io.Reader
+var _ io.Reader = deterministicRandSource(0)

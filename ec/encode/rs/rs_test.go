@@ -24,9 +24,6 @@ func TestNewRsEncoder(t *testing.T) {
 		if encoder.config.ParityRatio != 0.5 {
 			t.Errorf("expected parity ratio 0.5, got %f", encoder.config.ParityRatio)
 		}
-		if encoder.config.MinEmitCount != 1 {
-			t.Errorf("expected min emit count 1, got %d", encoder.config.MinEmitCount)
-		}
 	})
 
 	t.Run("custom config", func(t *testing.T) {
@@ -37,7 +34,6 @@ func TestNewRsEncoder(t *testing.T) {
 			NetworkChunkSize: 512,
 			ElementsPerChunk: 512,
 			Field:            f,
-			MinEmitCount:     3,
 			PrimitiveElement: f.FromBytes([]byte{0x03}),
 		}
 		encoder, err := NewRsEncoder(config)
@@ -46,9 +42,6 @@ func TestNewRsEncoder(t *testing.T) {
 		}
 		if encoder.config.ParityRatio != 1.0 {
 			t.Errorf("expected parity ratio 1.0, got %f", encoder.config.ParityRatio)
-		}
-		if encoder.config.MinEmitCount != 3 {
-			t.Errorf("expected min emit count 3, got %d", encoder.config.MinEmitCount)
 		}
 	})
 
@@ -171,7 +164,6 @@ func TestGenerateThenAddChunks(t *testing.T) {
 			NetworkChunkSize: 512,
 			ElementsPerChunk: 512,
 			Field:            f,
-			MinEmitCount:     1,
 			PrimitiveElement: f.FromBytes([]byte{0x03}),
 		}
 		encoder, err := NewRsEncoder(config)
@@ -313,7 +305,7 @@ func TestVerifyThenAddChunk(t *testing.T) {
 }
 
 func TestEmitChunk(t *testing.T) {
-	t.Run("emit with MinEmitCount=1", func(t *testing.T) {
+	t.Run("emit chunks in round-robin", func(t *testing.T) {
 		encoder, err := NewRsEncoder(nil)
 		if err != nil {
 			t.Fatalf("NewRsEncoder failed: %v", err)
@@ -331,65 +323,9 @@ func TestEmitChunk(t *testing.T) {
 			encoder.VerifyThenAddChunk(chunk)
 		}
 
-		// First emission should return the earliest chunk (index 0)
-		emitted, err := encoder.EmitChunk(messageID)
-		if err != nil {
-			t.Fatalf("EmitChunk failed: %v", err)
-		}
-		if emitted.(Chunk).Index != 0 {
-			t.Errorf("expected chunk index 0, got %d", emitted.(Chunk).Index)
-		}
-
-		// Second emission should return the next earliest unemitted chunk (index 1)
-		emitted, err = encoder.EmitChunk(messageID)
-		if err != nil {
-			t.Fatalf("EmitChunk failed: %v", err)
-		}
-		if emitted.(Chunk).Index != 1 {
-			t.Errorf("expected chunk index 1, got %d", emitted.(Chunk).Index)
-		}
-
-		// Third emission should return the last unemitted chunk (index 2)
-		emitted, err = encoder.EmitChunk(messageID)
-		if err != nil {
-			t.Fatalf("EmitChunk failed: %v", err)
-		}
-		if emitted.(Chunk).Index != 2 {
-			t.Errorf("expected chunk index 2, got %d", emitted.(Chunk).Index)
-		}
-
-		// Fourth emission should return the latest chunk again (index 2)
-		emitted, err = encoder.EmitChunk(messageID)
-		if err != nil {
-			t.Fatalf("EmitChunk failed: %v", err)
-		}
-		if emitted.(Chunk).Index != 2 {
-			t.Errorf("expected chunk index 2, got %d", emitted.(Chunk).Index)
-		}
-	})
-
-	t.Run("emit with MinEmitCount=2", func(t *testing.T) {
-		config := DefaultRsEncoderConfig()
-		config.MinEmitCount = 2
-		encoder, err := NewRsEncoder(config)
-		if err != nil {
-			t.Fatalf("NewRsEncoder failed: %v", err)
-		}
-
-		messageID := "test-msg"
-		// Add 2 chunks
-		for i := 0; i < 2; i++ {
-			chunk := Chunk{
-				MessageID:  messageID,
-				Index:      i,
-				ChunkData:  []byte{byte(i)},
-				ChunkCount: 2,
-			}
-			encoder.VerifyThenAddChunk(chunk)
-		}
-
-		// Emit 4 times - should emit each chunk twice in order of earliest first
-		expectedIndices := []int{0, 0, 1, 1}
+		// Emissions should select the earliest chunk with lowest emit count
+		// Expected: 0, 1, 2, 0, 1, 2, ... (round-robin)
+		expectedIndices := []int{0, 1, 2, 0, 1, 2}
 		for i, expected := range expectedIndices {
 			emitted, err := encoder.EmitChunk(messageID)
 			if err != nil {
@@ -398,15 +334,6 @@ func TestEmitChunk(t *testing.T) {
 			if emitted.(Chunk).Index != expected {
 				t.Errorf("emission %d: expected chunk index %d, got %d", i+1, expected, emitted.(Chunk).Index)
 			}
-		}
-
-		// Fifth emission should return the latest chunk (index 1)
-		emitted, err := encoder.EmitChunk(messageID)
-		if err != nil {
-			t.Fatalf("EmitChunk failed: %v", err)
-		}
-		if emitted.(Chunk).Index != 1 {
-			t.Errorf("expected chunk index 1, got %d", emitted.(Chunk).Index)
 		}
 	})
 
@@ -814,7 +741,6 @@ func TestReedSolomonCorrectness(t *testing.T) {
 					NetworkChunkSize: 512,
 					ElementsPerChunk: 512,
 					Field:            f,
-					MinEmitCount:     1,
 					PrimitiveElement: f.FromBytes([]byte{0x03}),
 				}
 
@@ -897,7 +823,6 @@ func TestReedSolomonCorrectness(t *testing.T) {
 			NetworkChunkSize: 256,
 			ElementsPerChunk: 256,
 			Field:            f,
-			MinEmitCount:     1,
 			PrimitiveElement: f.FromBytes([]byte{0x03}),
 		}
 
@@ -1059,7 +984,6 @@ func TestReedSolomonWithPrimeField(t *testing.T) {
 		NetworkChunkSize: 256, // Larger network chunks to accommodate prime field elements
 		ElementsPerChunk: 64,  // Number of field elements per chunk
 		Field:            primeField,
-		MinEmitCount:     1,
 		PrimitiveElement: primitiveElement,
 	}
 

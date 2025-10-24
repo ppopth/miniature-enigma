@@ -1,5 +1,5 @@
 general:
-  stop_time: 300s
+  stop_time: 600s
   model_unblocked_syscall_latency: true
   log_level: info
   heartbeat_interval: 1s

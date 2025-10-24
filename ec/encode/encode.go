@@ -25,4 +25,6 @@ type Encoder interface {
 	GetChunkCount(messageID string) int
 	// GetMinChunksForReconstruction returns the minimum number of chunks needed to reconstruct a message
 	GetMinChunksForReconstruction(messageID string) int
+	// GetChunksBeforeCompletion returns the number of chunks needed before sending completion signal
+	GetChunksBeforeCompletion(messageID string) int
 }

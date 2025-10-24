@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 # usage: python network_graph.py [node-count] [msg-size] [num-msgs] [protocol] [extra-options]
 # Generates Shadow network configuration for eth-ec-broadcast simulation
 from dataclasses import dataclass

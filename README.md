@@ -5,6 +5,7 @@ A Go-based peer-to-peer (P2P) broadcast system implementing erasure coding proto
 ## Features
 
 - **FloodSub**: Simple flooding protocol for baseline message propagation
+- **GossipSub**: libp2p GossipSub protocol integration (go-libp2p-pubsub)
 - **Erasure Coding Router**: Advanced erasure coding with pluggable encoder interface supporting:
   - **RLNC (Random Linear Network Coding)**: Linear combinations over finite fields for efficient and resilient broadcast
   - **Reed-Solomon**: Systematic MDS codes for efficient erasure coding with predictable chunk indices
@@ -96,7 +97,8 @@ This project uses GitHub Actions for continuous integration:
 - **Testing**: Runs tests on Go 1.21, 1.22, and 1.23
 - **Building**: Ensures all packages build correctly
 - **Code Formatting**: Validates code formatting with `gofmt`
-- **Example Testing**: Tests both RLNC and Reed-Solomon network examples for network functionality
+- **Example Testing**: Tests RLNC and Reed-Solomon network examples for network functionality
+- **Shadow Simulations**: Tests FloodSub, GossipSub, RLNC, and Reed-Solomon under realistic network conditions
 
 ## Architecture
 

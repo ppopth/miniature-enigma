@@ -44,6 +44,7 @@ The Reed-Solomon parameters are optimized for reliable communication:
 - **Redundancy**: 100% (1.0 parity ratio)
 - **Chunk Size**: 8 bytes - efficient for small to medium messages
 - **Network Chunk Size**: 8 bytes
+- **Completion Signals**: Enabled by default - nodes broadcast completion when reconstruction finishes, reducing unused chunk overhead
 
 ## Command Line Options
 
@@ -108,6 +109,7 @@ Type messages to broadcast (press Enter to send, 'quit' to exit):
 4. **MDS Property**: Any k symbols (data or parity) can reconstruct the message
 5. **Network Distribution**: All 2k symbols are distributed across the network
 6. **Reconstruction**: Receivers need any k symbols to perfectly reconstruct
+7. **Completion Signaling**: When a node completes reconstruction, it notifies peers to stop sending chunks for that message, reducing network overhead
 
 ## Redundancy Configuration
 

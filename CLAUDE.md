@@ -11,7 +11,7 @@ This is a Go-based peer-to-peer (P2P) broadcast system focused on erasure coding
   - **RLNC (Random Linear Network Coding)**: Uses linear combinations over finite fields for efficient and resilient broadcast
   - **Reed-Solomon**: Systematic MDS codes for efficient erasure coding with predictable chunk indices
 
-The networking layer supports both QUIC datagrams (unreliable, unordered) and QUIC streams (reliable, ordered) for flexible transport options.
+The networking layer supports both QUIC datagrams (unreliable, unordered) and QUIC streams (reliable, ordered) for flexible transport options. All protocols (FloodSub, RLNC, Reed-Solomon) can use either transport mode.
 
 ## Architecture
 
@@ -120,6 +120,7 @@ The project includes a CI/CD pipeline with:
 - **Build validation**: Ensures all packages build correctly
 - **Code formatting**: Validates code formatting with `gofmt`
 - **Example testing**: Tests both RLNC and Reed-Solomon network examples for network functionality
+- **Shadow simulations**: Tests FloodSub, GossipSub, RLNC, and Reed-Solomon protocols under realistic network conditions
 
 ### Code Quality Tools
 - **Makefile**: Standardized development workflow commands
@@ -144,9 +145,62 @@ The Reed-Solomon implementation provides systematic MDS codes with predictable c
 - **ElementsPerChunk**: Number of field elements per chunk
 - **Systematic encoding**: First k chunks are original data, remaining are parity chunks
 
+#### EC Router Parameters
+The EC router (`ec/ec.go`) supports configuration via `EcParams`:
+- **PublishMultiplier**: Controls redundancy when publishing messages (default: 2)
+  - Example: With 8 chunks and multiplier 2, sends 16 total chunks
+- **ForwardMultiplier**: Controls redundancy when forwarding chunks (default: 2)
+  - Sends this many chunks for each innovative chunk received
+- **DisableCompletionSignal**: Controls completion signal behavior (default: false)
+  - When false (default): Nodes broadcast completion signals when reconstruction is complete
+  - When true: Completion signals are disabled
+  - Completion signals allow peers to stop sending chunks for completed messages, reducing unused chunk overhead
+  - Configure via `WithEcParams(EcParams{DisableCompletionSignal: true})`
+
+### Chunk Statistics Tracking
+
+Both RLNC and Reed-Solomon encoders track chunk statistics in three categories:
+
+- **Useful chunks**: Chunks received BEFORE reconstruction is possible that contribute to reconstruction
+  - RLNC: Linearly independent chunks
+  - RS: Valid, non-duplicate chunks with valid indices
+  - These chunks help the node reconstruct the message
+
+- **Useless chunks**: Chunks received BEFORE reconstruction is possible that do NOT contribute
+  - Duplicate chunks
+  - Linearly dependent chunks (RLNC)
+  - Invalid chunk indices (RS)
+  - Verification failures
+  - These chunks waste bandwidth but arrive when still trying to reconstruct
+
+- **Unused chunks**: Any chunks (valid or invalid) received AFTER reconstruction is already possible
+  - Chunks that arrive too late
+  - Node already has enough chunks to reconstruct the message
+  - Represent network overhead after message is usable
+  - Can be reduced by enabling completion signals (default behavior)
+
+**Statistics are logged on each chunk event:**
+```
+Chunk event: Useful: X, Useless: Y, Unused: Z
+```
+
+**Implementation details:**
+- Counters are incremented atomically with mutex protection
+- Statistics are used in Shadow simulations for protocol comparison
+- Helps tune redundancy parameters (PublishMultiplier, ForwardMultiplier)
+- The comparison script (`shadow/compare_protocols.py`) visualizes these statistics
+
 ### Verification System
 The codebase includes a pluggable chunk verification system in `ec/encode/rlnc/verify/` that allows applications to insert custom validation logic for message chunks. Current implementations include:
 - **Pedersen commitments**: Cryptographic verification using Ristretto255 group operations
+
+**Verification Order (RLNC):**
+1. Type assertion check (no counter increment)
+2. Linear independence check
+3. Verifier check (moved here for efficiency)
+4. Store chunk if all checks pass
+
+This ordering ensures expensive verification only runs on linearly independent chunks.
 
 ### Connection Management
 The host layer handles peer connections through QUIC with automatic peer discovery via TLS certificate validation and peer ID derivation.
@@ -157,6 +211,12 @@ The host supports two QUIC transport modes:
 - **TransportStream**: Uses QUIC streams for reliable, ordered message delivery (higher latency, flow control, guaranteed delivery)
 
 Configure via `host.WithTransportMode(mode)` option when creating a host.
+
+All Shadow simulations support both transport modes:
+- **FloodSub**: `make floodsub` (datagrams), `make floodsub-streams` (streams)
+- **RLNC**: `make rlnc` (datagrams), `make rlnc-streams` (streams)
+- **Reed-Solomon**: `make rs` (datagrams), `make rs-streams` (streams)
+- **GossipSub**: Uses libp2p's TCP transport (separate implementation, not configurable)
 
 ## Module Structure
 

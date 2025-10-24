@@ -16,26 +16,40 @@ import (
 	"github.com/ethp2p/eth-ec-broadcast/host"
 	"github.com/ethp2p/eth-ec-broadcast/pubsub"
 	"github.com/ethp2p/eth-ec-broadcast/shadow/topology"
+
+	logging "github.com/ipfs/go-log/v2"
 )
 
 func main() {
 	var (
-		nodeID       = flag.Int("node-id", 0, "Node ID for this simulation instance")
-		nodeCount    = flag.Int("node-count", 10, "Total number of nodes in simulation")
-		msgCount     = flag.Int("msg-count", 5, "Number of messages to publish")
-		msgSize      = flag.Int("msg-size", 32, "Size of each message in bytes")
-		numChunks    = flag.Int("num-chunks", 4, "Number of chunks to divide each message into")
-		topologyFile = flag.String("topology-file", "", "Path to topology JSON file (if not specified, uses linear topology)")
+		nodeID                  = flag.Int("node-id", 0, "Node ID for this simulation instance")
+		nodeCount               = flag.Int("node-count", 10, "Total number of nodes in simulation")
+		msgCount                = flag.Int("msg-count", 5, "Number of messages to publish")
+		msgSize                 = flag.Int("msg-size", 32, "Size of each message in bytes")
+		numChunks               = flag.Int("num-chunks", 4, "Number of chunks to divide each message into")
+		multiplier              = flag.Int("multiplier", 4, "Multiplier for publish and forward")
+		topologyFile            = flag.String("topology-file", "", "Path to topology JSON file (if not specified, uses linear topology)")
+		useStreams              = flag.Bool("use-streams", false, "Use QUIC streams instead of datagrams")
+		logLevel                = flag.String("log-level", "info", "Log level (debug, info, warn, error)")
+		disableCompletionSignal = flag.Bool("disable-completion-signal", false, "Disable completion signals (default: false, signals enabled)")
+		bandwidthInterval       = flag.Int("bandwidth-interval", 100, "Bandwidth logging interval in milliseconds (default: 100ms)")
 	)
 	flag.Parse()
 
 	// Setup logging
 	log.SetPrefix(fmt.Sprintf("[rlnc-node-%d] ", *nodeID))
-	log.SetFlags(log.LstdFlags | log.Lshortfile)
+	log.SetFlags(log.LstdFlags | log.Lshortfile | log.Lmicroseconds)
+
+	// Set log level for all subsystems
+	level, err := logging.LevelFromString(*logLevel)
+	if err != nil {
+		log.Printf("Invalid log level %q, using info", *logLevel)
+		level = logging.LevelInfo
+	}
+	logging.SetAllLoggers(level)
 
 	// Load topology
 	var topo *topology.Topology
-	var err error
 
 	if *topologyFile != "" {
 		// Load from file
@@ -63,16 +77,26 @@ func main() {
 	// Create host with deterministic port based on node ID
 	// Enable Shadow compatibility mode
 	hostPort := uint16(8000 + *nodeID)
+
+	// Configure transport mode
+	transportMode := host.TransportDatagram
+	transportName := "datagram"
+	if *useStreams {
+		transportMode = host.TransportStream
+		transportName = "stream"
+	}
+
 	h, err := host.NewHost(
 		host.WithAddrPort(netip.AddrPortFrom(netip.IPv4Unspecified(), hostPort)),
 		host.WithShadowMode(),
+		host.WithTransportMode(transportMode),
 	)
 	if err != nil {
 		log.Fatalf("Failed to create host: %v", err)
 	}
 	defer h.Close()
 
-	log.Printf("Host created with ID: %s, listening on port: %d (Shadow mode)", h.ID(), hostPort)
+	log.Printf("Host created with ID: %s, listening on port: %d (Shadow mode, transport: %s)", h.ID(), hostPort, transportName)
 
 	// Create PubSub instance
 	ps, err := pubsub.NewPubSub(h)
@@ -91,13 +115,14 @@ func main() {
 	log.Printf("Calculated chunk size: %d bytes (message size %d / %d chunks)",
 		messageChunkSize, *msgSize, *numChunks)
 
-	// Keep using the same 65-bit prime field
-	prime65bit := new(big.Int)
-	prime65bit.SetString("36893488147419103183", 10) // 2^65 - 49, a 65-bit prime
-	f := field.NewPrimeField(prime65bit)
+	// Use a large 256-bit prime field for very fast performance
+	// 2^256 + 297 is a large prime that provides excellent performance
+	p := new(big.Int).Exp(big.NewInt(2), big.NewInt(256), nil)
+	p.Add(p, big.NewInt(297))
+	f := field.NewPrimeField(p)
 
-	// Each field element can hold up to 8 bytes (64 bits of data in a 65-bit field)
-	bytesPerElement := 8
+	// Each field element can hold 32 bytes (256 bits of data)
+	bytesPerElement := 32
 
 	// Validate that chunk size is compatible with bytes per element
 	if messageChunkSize%bytesPerElement != 0 {
@@ -106,7 +131,7 @@ func main() {
 	}
 
 	elementsPerChunk := messageChunkSize / bytesPerElement
-	networkChunkSize := elementsPerChunk * 9 // Each element needs 9 bytes for network serialization
+	networkChunkSize := elementsPerChunk * 33 // Each element needs 33 bytes for network serialization (256 bits + 1 byte)
 
 	log.Printf("Chunk configuration: %d bytes per chunk, %d elements per chunk, %d bytes network chunk size",
 		messageChunkSize, elementsPerChunk, networkChunkSize)
@@ -125,8 +150,9 @@ func main() {
 
 	// Create EC router with RLNC
 	router, err := ec.NewEcRouter(encoder, ec.WithEcParams(ec.EcParams{
-		PublishMultiplier: 4, // 4x redundancy when publishing
-		ForwardMultiplier: 8, // 8x when forwarding
+		PublishMultiplier:       *multiplier,
+		ForwardMultiplier:       *multiplier,
+		DisableCompletionSignal: *disableCompletionSignal,
 	}))
 	if err != nil {
 		log.Fatalf("Failed to create EC router: %v", err)
@@ -200,8 +226,41 @@ func main() {
 	}
 
 	// Wait for network setup and peer discovery (important in Shadow)
-	log.Printf("Waiting for peer discovery and network stabilization...")
-	time.Sleep(5 * time.Second)
+	// Synchronize all nodes to start at exactly 2000/01/01 00:02:00
+	targetTime := time.Date(2000, 1, 1, 0, 2, 0, 0, time.UTC)
+	waitDuration := targetTime.Sub(time.Now())
+	log.Printf("Waiting for peer discovery and network stabilization until 2000/01/01 00:02:00 (%v)...", waitDuration)
+	if waitDuration > 0 {
+		time.Sleep(waitDuration)
+	}
+
+	// Start periodic bandwidth logging (in Mbps)
+	go func() {
+		interval := time.Duration(*bandwidthInterval) * time.Millisecond
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+
+		var prevBytesSent, prevBytesReceived uint64
+		intervalSeconds := float64(*bandwidthInterval) / 1000.0
+
+		for range ticker.C {
+			bytesSent := h.GetBytesSent()
+			bytesReceived := h.GetBytesReceived()
+
+			// Calculate bandwidth in Mbps (megabits per second)
+			// (delta bytes * 8 bits/byte) / (interval_seconds * 1_000_000 bits/Mbit)
+			deltaBytesSent := bytesSent - prevBytesSent
+			deltaBytesReceived := bytesReceived - prevBytesReceived
+
+			sendMbps := float64(deltaBytesSent) * 8.0 / (intervalSeconds * 1_000_000)
+			recvMbps := float64(deltaBytesReceived) * 8.0 / (intervalSeconds * 1_000_000)
+
+			log.Printf("Bandwidth: SendMbps=%.2f, RecvMbps=%.2f", sendMbps, recvMbps)
+
+			prevBytesSent = bytesSent
+			prevBytesReceived = bytesReceived
+		}
+	}()
 
 	// Start message receiver goroutine
 	receivedCount := 0

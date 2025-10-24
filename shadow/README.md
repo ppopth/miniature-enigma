@@ -5,6 +5,7 @@ This directory contains Shadow network simulations for testing eth-ec-broadcast 
 ## Protocols
 
 - **FloodSub**: Basic message flooding protocol (baseline)
+- **GossipSub**: libp2p GossipSub protocol (go-libp2p-pubsub)
 - **RLNC**: Random Linear Network Coding erasure coding
 - **Reed-Solomon**: Reed-Solomon erasure coding
 
@@ -24,16 +25,20 @@ cd topology/gen && go build -o topology-gen main.go
 cd ../..
 
 # Run simulations - automatically uses topology/topology-{NODE_COUNT}.json if available
-make floodsub NODE_COUNT=10 MSG_SIZE=64 MSG_COUNT=5
-make floodsub-streams NODE_COUNT=10 MSG_SIZE=64 MSG_COUNT=5  # FloodSub with QUIC streams
-make rlnc NODE_COUNT=10 MSG_SIZE=64 MSG_COUNT=5
-make rs NODE_COUNT=10 MSG_SIZE=64 MSG_COUNT=5
+make floodsub NODE_COUNT=10 MSG_SIZE=256 MSG_COUNT=5
+make floodsub-streams NODE_COUNT=10 MSG_SIZE=256 MSG_COUNT=5  # FloodSub with QUIC streams
+make gossipsub NODE_COUNT=10 MSG_SIZE=256 MSG_COUNT=5          # libp2p GossipSub
+make rlnc NODE_COUNT=10 MSG_SIZE=256 MSG_COUNT=5
+make rs NODE_COUNT=10 MSG_SIZE=256 MSG_COUNT=5
 
 # Or run all protocols with same node count
-make all NODE_COUNT=10 MSG_SIZE=64 MSG_COUNT=5
+make all NODE_COUNT=10 MSG_SIZE=256 MSG_COUNT=5
 
 # Test results
 make test-all NODE_COUNT=10 MSG_COUNT=5
+
+# Run comprehensive topology testing (all topologies × all protocols with retry logic)
+make all-topologies LOG_LEVEL=debug
 ```
 
 ## Architecture: Two-Layer Network Model
@@ -63,14 +68,17 @@ shadow/
 ├── Makefile               # Master build coordinator
 ├── network_graph.py       # Generates Shadow network infrastructure
 ├── test_results.py        # Validates simulation results
+├── compare_protocols.py   # Protocol performance comparison tool
 ├── topology/              # Application topology system
 │   ├── topology.go        # Core topology data structure
 │   ├── generators.go      # Topology generation functions
 │   └── gen/               # Topology generator tool
 ├── floodsub/              # FloodSub simulation + Makefile
+├── gossipsub/             # GossipSub (libp2p) simulation + Makefile
 ├── rlnc/                  # RLNC simulation + Makefile
 ├── rs/                    # Reed-Solomon simulation + Makefile
-└── TOPOLOGY.md            # Detailed topology documentation
+├── TOPOLOGY.md            # Detailed topology documentation
+└── COMPARISON.md          # Protocol comparison guide
 ```
 
 ## Available Application Topologies
@@ -89,16 +97,50 @@ See [TOPOLOGY.md](TOPOLOGY.md) for detailed topology documentation.
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `NODE_COUNT` | 10 | Number of nodes in simulation |
-| `MSG_SIZE` | 64 | Message size in bytes |
+| `MSG_SIZE` | 256 | Message size in bytes |
 | `MSG_COUNT` | 5 | Number of messages to publish |
+| `NUM_CHUNKS` | 8 | Number of chunks for RLNC and Reed-Solomon |
+| `LOG_LEVEL` | info | Log level: debug, info, warn, error |
+| `PROGRESS` | false | Show Shadow progress bar during simulation |
+
+### Log Levels
+
+All Shadow simulations support configurable log levels with microsecond-precision timestamps:
+
+- **debug**: Detailed debugging information (chunk validation, peer messages, state changes)
+- **info**: General informational messages (default)
+- **warn**: Warning messages
+- **error**: Error messages only
+
+The log level controls both application logging and go-log subsystems (including libp2p for GossipSub).
+
+**Examples:**
+```bash
+# Run with debug logging for detailed output
+make floodsub LOG_LEVEL=debug NODE_COUNT=10
+
+# Run all protocols with minimal logging
+make all LOG_LEVEL=error
+
+# Run comprehensive tests with debug logging
+make all-topologies LOG_LEVEL=debug
+```
 
 ## Transport Modes
 
-All protocols support two QUIC transport modes:
+### Custom Protocols (FloodSub, RLNC, Reed-Solomon)
+These protocols support two QUIC transport modes:
 - **Datagrams** (default): Unreliable, unordered delivery with lower latency
 - **Streams**: Reliable, ordered delivery with flow control
 
 FloodSub includes both transport modes in CI testing. RLNC and Reed-Solomon currently use datagrams by default but can be configured to use streams via the `--use-streams` flag.
+
+### libp2p Protocol (GossipSub)
+GossipSub is a separate implementation using go-libp2p-pubsub with standard TCP transport:
+- Uses libp2p's TCP with multiplexed streams (not the custom QUIC host)
+- Reliable, ordered delivery with built-in flow control
+- Production-tested libp2p transport layer
+- Run with: `make gossipsub`
 
 ## Example: Complete Topology Simulation
 
@@ -118,3 +160,59 @@ cd floodsub && make test NODE_COUNT=10 MSG_COUNT=5
 The simulation will run with:
 - **Physical layer**: Realistic global internet latencies (Shadow)
 - **Application layer**: Your custom topology connection pattern
+
+## Protocol Performance Comparison
+
+Use the `compare_protocols.py` script to compare protocols across multiple metrics:
+
+**Two plots generated:**
+1. **CDF Plot**: Message arrival time distribution across GossipSub, Reed-Solomon, and RLNC
+2. **Chunk Statistics Plot**: Useful/useless/unused chunk accumulation for RS and RLNC
+
+**Chunk categories tracked:**
+- **Useful chunks**: Received before reconstruction possible (linearly independent/valid)
+- **Useless chunks**: Invalid/duplicate/dependent chunks before reconstruction
+- **Unused chunks**: Any chunks received after reconstruction already possible
+  - Reduced by completion signals (enabled by default, configurable via `DisableCompletionSignal`)
+
+**Example usage:**
+```bash
+cd shadow
+python3 compare_protocols.py --msg-size 256 --num-chunks 8
+```
+
+See [COMPARISON.md](COMPARISON.md) for detailed documentation, interpretation guide, and all command-line options.
+
+## Comprehensive Testing
+
+### all-topologies Target
+
+The `all-topologies` target runs exhaustive testing across all topology types and protocols with automatic retry logic for flaky tests:
+
+```bash
+# Run all topology/protocol combinations with retry logic
+cd shadow && make all-topologies LOG_LEVEL=debug
+```
+
+**What it tests:**
+- 6 topology types: linear, ring, mesh, tree, small-world, random-regular
+- 7 protocol variants: FloodSub (datagrams/streams), GossipSub, RLNC (datagrams/streams), RS (datagrams/streams)
+- 42 total test combinations
+
+**Retry Logic:**
+- Each test automatically retries up to 5 times on failure
+- Cleans simulation data between retries
+- 2-second delay between retry attempts
+- Fails only if all 5 attempts fail
+
+**Example Output:**
+```
+[Attempt 1/5] Linear + FloodSub (datagrams)
+✓ Linear + FloodSub (datagrams) passed
+[Attempt 1/5] Linear + FloodSub (streams)
+✗ Test failed, retrying...
+[Attempt 2/5] Linear + FloodSub (streams)
+✓ Linear + FloodSub (streams) passed
+```
+
+This target is used in CI to ensure reliability across all protocol and topology combinations.

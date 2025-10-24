@@ -9,7 +9,11 @@ import (
 	"github.com/ethp2p/eth-ec-broadcast/ec/encode"
 	"github.com/ethp2p/eth-ec-broadcast/ec/field"
 	"github.com/ethp2p/eth-ec-broadcast/pb"
+
+	logging "github.com/ipfs/go-log/v2"
 )
+
+var log = logging.Logger("rlnc")
 
 // Chunk represents a network coding chunk with its linear combination coefficients
 type Chunk struct {
@@ -103,11 +107,6 @@ func (r *RlncEncoder) VerifyThenAddChunk(chunk encode.Chunk) bool {
 		return false
 	}
 
-	// Call internal verifier if available
-	if r.config.Verifier != nil && !r.config.Verifier.Verify(&rlncChunk) {
-		return false
-	}
-
 	// Check linear independence against existing chunks for this message
 	messageID := rlncChunk.MessageID
 
@@ -116,10 +115,15 @@ func (r *RlncEncoder) VerifyThenAddChunk(chunk encode.Chunk) bool {
 
 	// Use REF-optimized incremental independence check
 	existingREF := r.coeffsREF[messageID]
-
-	// Check if the new chunk adds linearly independent information and get updated REF
 	newREF, isIndependent := field.IsLinearlyIndependentIncremental(existingREF, rlncChunk.Coeffs, r.config.Field)
 	if !isIndependent {
+		// Linearly dependent chunk
+		return false
+	}
+
+	// Call internal verifier if available (after linear independence check)
+	if r.config.Verifier != nil && !r.config.Verifier.Verify(&rlncChunk) {
+		// Verification failed on linearly independent chunk
 		return false
 	}
 
@@ -319,6 +323,13 @@ func (r *RlncEncoder) GetMinChunksForReconstruction(messageID string) int {
 	// The minimum number of chunks needed is equal to the number of coefficients
 	// (i.e., the number of original chunks that were encoded)
 	return len(chunks[0].Coeffs)
+}
+
+// GetChunksBeforeCompletion returns the number of chunks needed before sending completion signal
+func (r *RlncEncoder) GetChunksBeforeCompletion(messageID string) int {
+	// For RLNC, we send completion signal as soon as we can reconstruct,
+	// since there's no fixed total number of chunks
+	return r.GetMinChunksForReconstruction(messageID)
 }
 
 // ReconstructMessage recovers the original message by solving the linear system

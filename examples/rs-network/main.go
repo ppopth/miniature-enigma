@@ -82,7 +82,6 @@ func main() {
 		ElementsPerChunk: chunkSize,       // Each element is 1 byte
 		Field:            f,
 		PrimitiveElement: primitiveElement,
-		MinEmitCount:     4,
 	}
 
 	encoder, err := rs.NewRsEncoder(rsConfig)

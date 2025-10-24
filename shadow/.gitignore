@@ -8,6 +8,7 @@ shadow.data.*
 
 # Protocol-specific binaries and artifacts
 floodsub/floodsub-sim
+gossipsub/gossipsub-sim
 rlnc/rlnc-sim
 rs/rs-sim
 
@@ -15,21 +16,29 @@ rs/rs-sim
 topology/gen/topology-gen
 topology/topology-*.json
 floodsub/shadow-*.yaml
+gossipsub/shadow-*.yaml
 rlnc/shadow-*.yaml
 rs/shadow-*.yaml
 floodsub/graph.gml
+gossipsub/graph.gml
 rlnc/graph.gml
 rs/graph.gml
 floodsub/shadow.data/
+gossipsub/shadow.data/
 rlnc/shadow.data/
 rs/shadow.data/
 floodsub/shadow.data.*
+gossipsub/shadow.data.*
 rlnc/shadow.data.*
 rs/shadow.data.*
 
 # Simulation results
 node-*-results.txt
 *.log
+
+# Protocol comparison outputs
+protocol_comparison_cdf.png
+*.png
 
 # Python cache
 __pycache__/
