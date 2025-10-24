@@ -1652,3 +1652,165 @@ func TestBitmapSendsMissingChunks(t *testing.T) {
 
 	t.Logf("Successfully sent %d missing chunks as requested by bitmap", len(sentChunks))
 }
+
+// TestBitmapPendingChunkRequests tests that chunk requests are tracked and fulfilled later
+func TestBitmapPendingChunkRequests(t *testing.T) {
+	// Create encoder without generating chunks initially
+	irreducible := big.NewInt(0x11B)
+	f := field.NewBinaryField(8, irreducible)
+	config := &RsEncoderConfig{
+		ParityRatio:      0.5,
+		MessageChunkSize: 32,
+		NetworkChunkSize: 32,
+		ElementsPerChunk: 32,
+		Field:            f,
+		PrimitiveElement: f.FromBytes([]byte{0x03}),
+		BitmapThreshold:  0.5,
+	}
+
+	encoder, err := NewRsEncoder(config)
+	if err != nil {
+		t.Fatalf("Failed to create encoder: %v", err)
+	}
+
+	messageID := "test-pending-requests"
+
+	// Manually add only chunk 0 to the encoder
+	chunk0 := Chunk{
+		MessageID:  messageID,
+		Index:      0,
+		ChunkData:  make([]byte, 32),
+		ChunkCount: 4, // 4 data chunks
+	}
+	for i := range chunk0.ChunkData {
+		chunk0.ChunkData[i] = byte(i)
+	}
+
+	encoder.mutex.Lock()
+	encoder.chunks[messageID] = make(map[int]Chunk)
+	encoder.chunks[messageID][0] = chunk0
+	encoder.chunkCounts[messageID] = 4
+	encoder.chunkOrder[messageID] = []int{0}
+	encoder.emitCounts[messageID] = make(map[int]int)
+	encoder.mutex.Unlock()
+
+	// Track chunks sent to peer
+	var sentChunks []*pb.EcRpc_Chunk
+	mockSendFunc := func(rpc *pb.TopicRpc) {
+		if rpc.GetEc() != nil {
+			sentChunks = append(sentChunks, rpc.GetEc().GetChunks()...)
+		}
+	}
+
+	peerAlice := pubsub.PeerSend{
+		ID:       peer.ID("alice"),
+		SendFunc: mockSendFunc,
+	}
+
+	// Create a bitmap requesting chunks 0, 1, and 2
+	bitmap := make([]byte, 1)
+	bitmap[0] = 0x07 // Binary: 00000111 (bits 0, 1, 2 set)
+
+	chunkWithBitmap := Chunk{
+		MessageID:  messageID,
+		Index:      3, // Sending chunk 3 with bitmap
+		ChunkData:  make([]byte, 32),
+		ChunkCount: 4,
+		Bitmap:     bitmap,
+	}
+
+	// Add the chunk with bitmap - should send chunk 0 immediately and track requests for 1 and 2
+	if !encoder.VerifyThenAddChunk(peerAlice, chunkWithBitmap) {
+		t.Fatal("Failed to add chunk with bitmap")
+	}
+
+	// Verify that only chunk 0 was sent immediately
+	if len(sentChunks) != 1 {
+		t.Fatalf("Expected 1 chunk to be sent immediately, got %d", len(sentChunks))
+	}
+
+	decodedChunk, err := encoder.DecodeChunk(*sentChunks[0].MessageID, sentChunks[0].Data, sentChunks[0].Extra)
+	if err != nil {
+		t.Fatalf("Failed to decode sent chunk: %v", err)
+	}
+	if decodedChunk.(Chunk).Index != 0 {
+		t.Errorf("Expected chunk 0 to be sent immediately, got chunk %d", decodedChunk.(Chunk).Index)
+	}
+
+	t.Logf("Chunk 0 sent immediately as expected")
+
+	// Clear sent chunks to track new ones
+	sentChunks = nil
+
+	// Now add chunk 1 - should be automatically sent to alice
+	chunk1 := Chunk{
+		MessageID:  messageID,
+		Index:      1,
+		ChunkData:  make([]byte, 32),
+		ChunkCount: 4,
+	}
+	for i := range chunk1.ChunkData {
+		chunk1.ChunkData[i] = byte(i + 32)
+	}
+
+	// Add chunk 1 from a different peer (not alice)
+	peerBob := pubsub.PeerSend{
+		ID:       peer.ID("bob"),
+		SendFunc: nil, // Bob doesn't need a send function
+	}
+
+	if !encoder.VerifyThenAddChunk(peerBob, chunk1) {
+		t.Fatal("Failed to add chunk 1")
+	}
+
+	// Verify that chunk 1 was sent to alice
+	if len(sentChunks) != 1 {
+		t.Fatalf("Expected 1 chunk to be sent to alice after chunk 1 arrives, got %d", len(sentChunks))
+	}
+
+	decodedChunk, err = encoder.DecodeChunk(*sentChunks[0].MessageID, sentChunks[0].Data, sentChunks[0].Extra)
+	if err != nil {
+		t.Fatalf("Failed to decode sent chunk: %v", err)
+	}
+	if decodedChunk.(Chunk).Index != 1 {
+		t.Errorf("Expected chunk 1 to be sent to alice, got chunk %d", decodedChunk.(Chunk).Index)
+	}
+
+	t.Logf("Chunk 1 automatically sent to alice when it arrived")
+
+	// Clear sent chunks again
+	sentChunks = nil
+
+	// Now add chunk 2 - should also be automatically sent to alice
+	chunk2 := Chunk{
+		MessageID:  messageID,
+		Index:      2,
+		ChunkData:  make([]byte, 32),
+		ChunkCount: 4,
+	}
+	for i := range chunk2.ChunkData {
+		chunk2.ChunkData[i] = byte(i + 64)
+	}
+
+	if !encoder.VerifyThenAddChunk(peerBob, chunk2) {
+		t.Fatal("Failed to add chunk 2")
+	}
+
+	// Verify that chunk 2 was sent to alice
+	if len(sentChunks) != 1 {
+		t.Fatalf("Expected 1 chunk to be sent to alice after chunk 2 arrives, got %d", len(sentChunks))
+	}
+
+	decodedChunk, err = encoder.DecodeChunk(*sentChunks[0].MessageID, sentChunks[0].Data, sentChunks[0].Extra)
+	if err != nil {
+		t.Fatalf("Failed to decode sent chunk: %v", err)
+	}
+	if decodedChunk.(Chunk).Index != 2 {
+		t.Errorf("Expected chunk 2 to be sent to alice, got chunk %d", decodedChunk.(Chunk).Index)
+	}
+
+	t.Logf("Chunk 2 automatically sent to alice when it arrived")
+
+	// Verify that alice received all 3 chunks (0 immediately, 1 and 2 later)
+	t.Logf("Successfully tracked pending requests and fulfilled them when chunks arrived")
+}
