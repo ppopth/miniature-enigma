@@ -88,6 +88,10 @@ type RsEncoder struct {
 	// Track which peers have sent bitmaps for each message
 	// Map structure: messageID -> set of peer IDs who sent bitmaps
 	peerBitmaps map[string]map[peer.ID]struct{}
+
+	// Track pending chunk requests from peers
+	// Map structure: messageID -> chunk index -> list of peers waiting for that chunk
+	pendingChunkRequests map[string]map[int][]pubsub.PeerSend
 }
 
 // NewRsEncoder creates a new Reed-Solomon encoder
@@ -113,12 +117,13 @@ func NewRsEncoder(config *RsEncoderConfig) (*RsEncoder, error) {
 	}
 
 	r := &RsEncoder{
-		config:      config,
-		chunks:      make(map[string]map[int]Chunk),
-		chunkCounts: make(map[string]int),
-		chunkOrder:  make(map[string][]int),
-		emitCounts:  make(map[string]map[int]int),
-		peerBitmaps: make(map[string]map[peer.ID]struct{}),
+		config:               config,
+		chunks:               make(map[string]map[int]Chunk),
+		chunkCounts:          make(map[string]int),
+		chunkOrder:           make(map[string][]int),
+		emitCounts:           make(map[string]map[int]int),
+		peerBitmaps:          make(map[string]map[peer.ID]struct{}),
+		pendingChunkRequests: make(map[string]map[int][]pubsub.PeerSend),
 	}
 
 	if (8*r.config.MessageChunkSize)%r.config.ElementsPerChunk != 0 {
@@ -230,6 +235,30 @@ func (r *RsEncoder) VerifyThenAddChunk(peerSend pubsub.PeerSend, chunk encode.Ch
 	// Track the order this chunk was received
 	r.chunkOrder[rsChunk.MessageID] = append(r.chunkOrder[rsChunk.MessageID], rsChunk.Index)
 
+	// Check if any peers are waiting for this chunk
+	if pendingPeers, exists := r.pendingChunkRequests[rsChunk.MessageID][rsChunk.Index]; exists {
+		log.Debugf("Fulfilling %d pending requests for chunk %d of message %s", len(pendingPeers), rsChunk.Index, rsChunk.MessageID[:8])
+
+		for _, peerSend := range pendingPeers {
+			if peerSend.SendFunc != nil {
+				rpcChunk := &pb.EcRpc_Chunk{
+					MessageID: &rsChunk.MessageID,
+					Data:      rsChunk.Data(),
+					Extra:     rsChunk.EncodeExtra(),
+				}
+				peerSend.SendFunc(&pb.TopicRpc{
+					Ec: &pb.EcRpc{
+						Chunks: []*pb.EcRpc_Chunk{rpcChunk},
+					},
+				})
+				log.Debugf("Sent pending chunk %d to peer %s for message %s", rsChunk.Index, peerSend.ID, rsChunk.MessageID[:8])
+			}
+		}
+
+		// Clear the pending requests for this chunk
+		delete(r.pendingChunkRequests[rsChunk.MessageID], rsChunk.Index)
+	}
+
 	return true
 }
 
@@ -266,7 +295,12 @@ func (r *RsEncoder) sendMissingChunks(peerSend pubsub.PeerSend, messageID string
 	for _, idx := range missingIndices {
 		chunk, have := chunks[idx]
 		if !have {
-			// We don't have this chunk, skip it
+			// We don't have this chunk, track the request for later fulfillment
+			if r.pendingChunkRequests[messageID] == nil {
+				r.pendingChunkRequests[messageID] = make(map[int][]pubsub.PeerSend)
+			}
+			r.pendingChunkRequests[messageID][idx] = append(r.pendingChunkRequests[messageID][idx], peerSend)
+			log.Debugf("Chunk %d not available for message %s, tracking request from peer %s", idx, messageID[:8], peerSend.ID)
 			continue
 		}
 
