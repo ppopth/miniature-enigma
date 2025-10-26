@@ -12,6 +12,7 @@ import (
 
 	"github.com/ethp2p/eth-ec-broadcast/ec"
 	"github.com/ethp2p/eth-ec-broadcast/ec/encode/rlnc"
+	"github.com/ethp2p/eth-ec-broadcast/ec/encode/rlnc/verify"
 	"github.com/ethp2p/eth-ec-broadcast/ec/field"
 	"github.com/ethp2p/eth-ec-broadcast/host"
 	"github.com/ethp2p/eth-ec-broadcast/pubsub"
@@ -33,6 +34,7 @@ func main() {
 		logLevel                = flag.String("log-level", "info", "Log level (debug, info, warn, error)")
 		disableCompletionSignal = flag.Bool("disable-completion-signal", false, "Disable completion signals (default: false, signals enabled)")
 		bandwidthInterval       = flag.Int("bandwidth-interval", 100, "Bandwidth logging interval in milliseconds (default: 100ms)")
+		benchmarkFile           = flag.String("benchmark-file", "", "Path to benchmark JSON file for ShadowPedersenVerifier (if set, uses shadow verifier)")
 	)
 	flag.Parse()
 
@@ -136,6 +138,17 @@ func main() {
 	log.Printf("Chunk configuration: %d bytes per chunk, %d elements per chunk, %d bytes network chunk size",
 		messageChunkSize, elementsPerChunk, networkChunkSize)
 
+	// Create verifier if benchmark file is specified
+	var verifier rlnc.ChunkVerifier
+	if *benchmarkFile != "" {
+		shadowVerifier, err := verify.NewShadowPedersenVerifierFromFile(*benchmarkFile)
+		if err != nil {
+			log.Fatalf("Failed to create ShadowPedersenVerifier from file: %v", err)
+		}
+		verifier = shadowVerifier
+		log.Printf("Using ShadowPedersenVerifier with timing from: %s", *benchmarkFile)
+	}
+
 	rlncConfig := &rlnc.RlncEncoderConfig{
 		RlncCommonConfig: rlnc.RlncCommonConfig{
 			MessageChunkSize:   messageChunkSize,
@@ -144,6 +157,7 @@ func main() {
 			MaxCoefficientBits: 32,
 			Field:              f,
 		},
+		Verifier: verifier,
 	}
 	encoder, err := rlnc.NewRlncEncoder(rlncConfig)
 	if err != nil {

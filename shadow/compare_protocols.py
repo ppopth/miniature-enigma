@@ -62,7 +62,7 @@ def generate_topology(node_count, degree=3):
         return False
 
 
-def run_simulation(protocol, node_count, msg_size, msg_count, num_chunks=None, multiplier=None, log_level="info", disable_completion_signal=False, bandwidth_interval=None):
+def run_simulation(protocol, node_count, msg_size, msg_count, num_chunks=None, multiplier=None, log_level="info", disable_completion_signal=False, bandwidth_interval=None, benchmark_file=None):
     """Run a Shadow simulation for the specified protocol."""
     print(f"\n{'='*60}")
     print(f"Running {protocol.upper()} simulation...")
@@ -88,6 +88,9 @@ def run_simulation(protocol, node_count, msg_size, msg_count, num_chunks=None, m
 
     if bandwidth_interval and protocol in ["rlnc", "rs"]:
         cmd.append(f"BANDWIDTH_INTERVAL={bandwidth_interval}")
+
+    if benchmark_file and protocol == "rlnc":
+        cmd.append(f"BENCHMARK_FILE={benchmark_file}")
 
     # Display the command being executed
     print(f"Command: {' '.join(cmd)}")
@@ -836,6 +839,8 @@ Examples:
                         help='Disable completion signals for RS and RLNC protocols (default: false, signals enabled)')
     parser.add_argument('--bandwidth-interval', type=int, default=100,
                         help='Bandwidth logging interval in milliseconds (default: 100)')
+    parser.add_argument('--benchmark-file', type=str, default=None,
+                        help='Path to Pedersen benchmark JSON file for RLNC shadow verifier (optional)')
 
     args = parser.parse_args()
 
@@ -897,7 +902,8 @@ Bandwidth:       {args.bandwidth_output}
                 args.multiplier if protocol in ['rs', 'rlnc'] else None,
                 args.log_level,
                 args.disable_completion_signal,
-                args.bandwidth_interval
+                args.bandwidth_interval,
+                args.benchmark_file
             )
 
             if not success[protocol]:

@@ -12,6 +12,7 @@ PROGRESS ?= false
 LOG_LEVEL ?= info
 DISABLE_COMPLETION_SIGNAL ?= false
 BANDWIDTH_INTERVAL ?= 100
+BENCHMARK_FILE ?=
 
 # Check dependencies
 check-deps:
@@ -32,9 +33,17 @@ build: check-deps
 generate-config: check-deps
 	@echo "Generating Shadow network configuration for $(NODE_COUNT) nodes (RLNC)..."
 ifeq ($(DISABLE_COMPLETION_SIGNAL),true)
-	python3 ../network_graph.py $(NODE_COUNT) $(MSG_SIZE) $(MSG_COUNT) rlnc "-num-chunks $(NUM_CHUNKS) -multiplier $(MULTIPLIER) --log-level $(LOG_LEVEL) --disable-completion-signal --bandwidth-interval $(BANDWIDTH_INTERVAL)"
+	@if [ -n "$(BENCHMARK_FILE)" ]; then \
+		python3 ../network_graph.py $(NODE_COUNT) $(MSG_SIZE) $(MSG_COUNT) rlnc "-num-chunks $(NUM_CHUNKS) -multiplier $(MULTIPLIER) --log-level $(LOG_LEVEL) --disable-completion-signal --bandwidth-interval $(BANDWIDTH_INTERVAL) --benchmark-file $(BENCHMARK_FILE)"; \
+	else \
+		python3 ../network_graph.py $(NODE_COUNT) $(MSG_SIZE) $(MSG_COUNT) rlnc "-num-chunks $(NUM_CHUNKS) -multiplier $(MULTIPLIER) --log-level $(LOG_LEVEL) --disable-completion-signal --bandwidth-interval $(BANDWIDTH_INTERVAL)"; \
+	fi
 else
-	python3 ../network_graph.py $(NODE_COUNT) $(MSG_SIZE) $(MSG_COUNT) rlnc "-num-chunks $(NUM_CHUNKS) -multiplier $(MULTIPLIER) --log-level $(LOG_LEVEL) --bandwidth-interval $(BANDWIDTH_INTERVAL)"
+	@if [ -n "$(BENCHMARK_FILE)" ]; then \
+		python3 ../network_graph.py $(NODE_COUNT) $(MSG_SIZE) $(MSG_COUNT) rlnc "-num-chunks $(NUM_CHUNKS) -multiplier $(MULTIPLIER) --log-level $(LOG_LEVEL) --bandwidth-interval $(BANDWIDTH_INTERVAL) --benchmark-file $(BENCHMARK_FILE)"; \
+	else \
+		python3 ../network_graph.py $(NODE_COUNT) $(MSG_SIZE) $(MSG_COUNT) rlnc "-num-chunks $(NUM_CHUNKS) -multiplier $(MULTIPLIER) --log-level $(LOG_LEVEL) --bandwidth-interval $(BANDWIDTH_INTERVAL)"; \
+	fi
 endif
 	@test -f shadow-rlnc.yaml && test -f graph.gml || (echo "Config generation failed" && exit 1)
 	@echo "Configuration generated"
@@ -43,9 +52,17 @@ endif
 generate-config-streams: check-deps
 	@echo "Generating Shadow network configuration for $(NODE_COUNT) nodes (RLNC with streams)..."
 ifeq ($(DISABLE_COMPLETION_SIGNAL),true)
-	python3 ../network_graph.py $(NODE_COUNT) $(MSG_SIZE) $(MSG_COUNT) rlnc "-num-chunks $(NUM_CHUNKS) -multiplier $(MULTIPLIER) --use-streams --log-level $(LOG_LEVEL) --disable-completion-signal --bandwidth-interval $(BANDWIDTH_INTERVAL)"
+	@if [ -n "$(BENCHMARK_FILE)" ]; then \
+		python3 ../network_graph.py $(NODE_COUNT) $(MSG_SIZE) $(MSG_COUNT) rlnc "-num-chunks $(NUM_CHUNKS) -multiplier $(MULTIPLIER) --use-streams --log-level $(LOG_LEVEL) --disable-completion-signal --bandwidth-interval $(BANDWIDTH_INTERVAL) --benchmark-file $(BENCHMARK_FILE)"; \
+	else \
+		python3 ../network_graph.py $(NODE_COUNT) $(MSG_SIZE) $(MSG_COUNT) rlnc "-num-chunks $(NUM_CHUNKS) -multiplier $(MULTIPLIER) --use-streams --log-level $(LOG_LEVEL) --disable-completion-signal --bandwidth-interval $(BANDWIDTH_INTERVAL)"; \
+	fi
 else
-	python3 ../network_graph.py $(NODE_COUNT) $(MSG_SIZE) $(MSG_COUNT) rlnc "-num-chunks $(NUM_CHUNKS) -multiplier $(MULTIPLIER) --use-streams --log-level $(LOG_LEVEL) --bandwidth-interval $(BANDWIDTH_INTERVAL)"
+	@if [ -n "$(BENCHMARK_FILE)" ]; then \
+		python3 ../network_graph.py $(NODE_COUNT) $(MSG_SIZE) $(MSG_COUNT) rlnc "-num-chunks $(NUM_CHUNKS) -multiplier $(MULTIPLIER) --use-streams --log-level $(LOG_LEVEL) --bandwidth-interval $(BANDWIDTH_INTERVAL) --benchmark-file $(BENCHMARK_FILE)"; \
+	else \
+		python3 ../network_graph.py $(NODE_COUNT) $(MSG_SIZE) $(MSG_COUNT) rlnc "-num-chunks $(NUM_CHUNKS) -multiplier $(MULTIPLIER) --use-streams --log-level $(LOG_LEVEL) --bandwidth-interval $(BANDWIDTH_INTERVAL)"; \
+	fi
 endif
 	@test -f shadow-rlnc.yaml && test -f graph.gml || (echo "Config generation failed" && exit 1)
 	@echo "Configuration generated (with QUIC streams)"
