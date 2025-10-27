@@ -76,8 +76,17 @@ func main() {
 	sk.SetByCSPRNG()
 	pk := sk.GetPublicKey()
 
-	// Create PedersenVerifier with network chunk size
-	pv, err := verify.NewPedersenVerifier(networkChunkSize, elementsPerChunk, &verify.PedersenConfig{
+	// Create RLNC common config
+	rlncConfig := &rlnc.RlncCommonConfig{
+		MessageChunkSize:   *messageChunkSize,
+		NetworkChunkSize:   networkChunkSize,
+		ElementsPerChunk:   elementsPerChunk,
+		MaxCoefficientBits: 32,
+		Field:              f,
+	}
+
+	// Create PedersenVerifier with RLNC common config
+	pv, err := verify.NewPedersenVerifier(rlncConfig, &verify.PedersenConfig{
 		BLSSecretKey: sk,
 		PublicKeyCallback: func(publisherID int) *bls.PublicKey {
 			return pk
@@ -143,14 +152,42 @@ func main() {
 		coeffs[i] = f.FromBytes(coeffBytes)
 	}
 
+	// Compute linear combination of chunks using the coefficients
+	// This creates a coded chunk: chunk_data = Σ(coeff_i * chunk_i)
+	combinedElements := make([]field.Element, elementsPerChunk)
+	// Initialize with zero elements
+	for i := range combinedElements {
+		combinedElements[i] = f.Zero()
+	}
+
+	for i := 0; i < *numChunks; i++ {
+		// Split chunk into field elements
+		elements := field.SplitBitsToFieldElements(chunks[i], networkBitsPerElement, f)
+
+		// Add coeff_i * chunk_i to the combination
+		for j, elem := range elements {
+			scaled := elem.Mul(coeffs[i])
+			combinedElements[j] = combinedElements[j].Add(scaled)
+		}
+	}
+
+	// Convert combined elements back to bytes
+	combinedChunk := field.FieldElementsToBytes(combinedElements, networkBitsPerElement)
+
 	testChunk := &rlnc.Chunk{
 		MessageID: "bench-message",
-		ChunkData: chunks[0], // Use first chunk data
+		ChunkData: combinedChunk,
 		Coeffs:    coeffs,
 		Extra:     extras[0],
 	}
 
 	// Benchmark Verify
+	// First verify that the test chunk actually verifies correctly
+	if !pv.Verify(testChunk) {
+		fmt.Fprintf(os.Stderr, "Error: Test chunk verification failed\n")
+		os.Exit(1)
+	}
+
 	start = time.Now()
 	for i := 0; i < *iterations; i++ {
 		_ = pv.Verify(testChunk)

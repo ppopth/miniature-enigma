@@ -14,6 +14,7 @@ import (
 // using sleep operations instead of actual cryptographic operations. This is useful for
 // Shadow simulations where we want to model the performance impact without the computational cost.
 type ShadowPedersenVerifier struct {
+	chunkSize            int           // Expected network chunk size
 	numChunks            int           // Expected number of chunks
 	generateExtrasTiming time.Duration // Timing for GenerateExtras
 	verifyTiming         time.Duration // Timing for Verify
@@ -42,6 +43,7 @@ func NewShadowPedersenVerifierFromFile(benchmarkFile string) (*ShadowPedersenVer
 	}
 
 	return &ShadowPedersenVerifier{
+		chunkSize:            benchData.ChunkSize,
 		numChunks:            benchData.NumChunks,
 		generateExtrasTiming: benchData.GenerateExtras,
 		verifyTiming:         benchData.Verify,
@@ -61,6 +63,13 @@ func (sv *ShadowPedersenVerifier) GenerateExtras(chunks [][]byte) ([][]byte, err
 	// Validate that the number of chunks matches
 	if len(chunks) != sv.numChunks {
 		return nil, fmt.Errorf("expected %d chunks, got %d", sv.numChunks, len(chunks))
+	}
+
+	// Validate chunk sizes
+	for i, chunk := range chunks {
+		if len(chunk) != sv.chunkSize {
+			return nil, fmt.Errorf("chunk %d has size %d, expected %d", i, len(chunk), sv.chunkSize)
+		}
 	}
 
 	// Sleep to simulate the computation

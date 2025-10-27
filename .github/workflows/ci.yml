@@ -270,9 +270,10 @@ jobs:
 
     - name: Run RLNC simulation with ShadowPedersenVerifier
       run: |
+        BENCHMARK_PATH=$(realpath pedersen_benchmark.json)
         cd shadow/rlnc
         make clean
-        make all BENCHMARK_FILE=../../pedersen_benchmark.json NODE_COUNT=5 MSG_SIZE=256 MSG_COUNT=1 NUM_CHUNKS=8
+        make all BENCHMARK_FILE=$BENCHMARK_PATH NODE_COUNT=5 MSG_SIZE=256 MSG_COUNT=1 NUM_CHUNKS=8
       timeout-minutes: 10
 
     - name: Verify simulation success
