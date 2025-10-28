@@ -750,9 +750,9 @@ def plot_cdfs(gossipsub_latencies, rs_latencies_by_threshold, rlnc_latencies, ou
     # RLNC (solid line)
     plt.plot(rlnc_x, rlnc_y, '-', linewidth=2, label=f'RLNC(n=kD) (k={num_chunks}, D={multiplier}, routing=random){signal_suffix}', color='#A23B72')
 
-    # RS with different bitmap thresholds (solid lines, different shades of blue)
+    # RS with different bitmap thresholds (solid lines, distinct colors)
     # Display as (1-threshold)*100% (when threshold=0.3, display as 70% meaning bitmap starts at 70% received)
-    rs_colors = ['#0d3b66', '#1a5276', '#2E86AB', '#5dade2']  # Very dark blue, dark blue, medium blue, light blue
+    rs_colors = ['#2E86AB', '#E07A5F', '#F2CC8F', '#81B29A']  # Blue, Coral, Yellow, Green
     for i, (threshold, rs_latencies) in enumerate(sorted(rs_latencies_by_threshold.items())):
         rs_x, rs_y = compute_cdf(rs_latencies)
         plt.plot(rs_x, rs_y, '-', linewidth=2,
