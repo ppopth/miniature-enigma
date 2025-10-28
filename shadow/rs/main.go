@@ -33,6 +33,7 @@ func main() {
 		logLevel                = flag.String("log-level", "info", "Log level (debug, info, warn, error)")
 		disableCompletionSignal = flag.Bool("disable-completion-signal", false, "Disable completion signals (default: false, signals enabled)")
 		bandwidthInterval       = flag.Int("bandwidth-interval", 100, "Bandwidth logging interval in milliseconds (default: 100ms)")
+		bitmapThreshold         = flag.Float64("bitmap-threshold", 0.5, "Bitmap threshold (0.0-1.0, default: 0.5 = start sending bitmap when 50% of chunks received)")
 	)
 	flag.Parse()
 
@@ -149,6 +150,7 @@ func main() {
 		ElementsPerChunk: elementsPerChunk,
 		Field:            f,
 		PrimitiveElement: f.FromBytes(big.NewInt(3).Bytes()), // 3 is a primitive element for prime fields
+		BitmapThreshold:  *bitmapThreshold,
 	}
 	encoder, err := rs.NewRsEncoder(rsConfig)
 	if err != nil {

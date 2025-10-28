@@ -62,7 +62,7 @@ def generate_topology(node_count, degree=3):
         return False
 
 
-def run_simulation(protocol, node_count, msg_size, msg_count, num_chunks=None, multiplier=None, log_level="info", disable_completion_signal=False, bandwidth_interval=None):
+def run_simulation(protocol, node_count, msg_size, msg_count, num_chunks=None, multiplier=None, log_level="info", disable_completion_signal=False, bandwidth_interval=None, bitmap_threshold=None):
     """Run a Shadow simulation for the specified protocol."""
     print(f"\n{'='*60}")
     print(f"Running {protocol.upper()} simulation...")
@@ -88,6 +88,9 @@ def run_simulation(protocol, node_count, msg_size, msg_count, num_chunks=None, m
 
     if bandwidth_interval and protocol in ["rlnc", "rs"]:
         cmd.append(f"BANDWIDTH_INTERVAL={bandwidth_interval}")
+
+    if bitmap_threshold is not None and protocol == "rs":
+        cmd.append(f"BITMAP_THRESHOLD={bitmap_threshold}")
 
     # Display the command being executed
     print(f"Command: {' '.join(cmd)}")
@@ -363,7 +366,7 @@ def compute_cdf(data):
     return sorted_data, cdf
 
 
-def plot_chunk_statistics(rs_stats, rlnc_stats, output_file, node_count, num_chunks, multiplier, msg_size, degree, disable_completion_signal=False):
+def plot_chunk_statistics(rs_stats, rlnc_stats, output_file, node_count, num_chunks, multiplier, msg_size, degree, disable_completion_signal=False, bitmap_threshold=None):
     """Plot time series of useful, useless, and unused chunks for RS and RLNC protocols."""
     fig, axes = plt.subplots(1, 2, figsize=(16, 6))
     fig.suptitle(f'Chunk Statistics Over Time (Average Per Node)\n(Nodes: {node_count}, Peers: {degree}, Message Size: {msg_size}B)',
@@ -372,8 +375,11 @@ def plot_chunk_statistics(rs_stats, rlnc_stats, output_file, node_count, num_chu
     # Add "(no completion signal)" suffix only when disabled (not when enabled, since that's default)
     signal_suffix = " (no completion signal)" if disable_completion_signal else ""
 
+    # Add bitmap threshold to RS label if provided (display as (1-threshold)*100%)
+    bitmap_suffix = f", bitmap={int((1.0 - bitmap_threshold) * 100)}%" if bitmap_threshold is not None else ""
+
     protocols = [
-        (f'RS(2k) (k={num_chunks}, D={multiplier}, routing=random){signal_suffix}', rs_stats, '#2E86AB'),
+        (f'RS(2k) (k={num_chunks}, D={multiplier}, routing=random{bitmap_suffix}){signal_suffix}', rs_stats, '#2E86AB'),
         (f'RLNC(n=kD) (k={num_chunks}, D={multiplier}, routing=random){signal_suffix}', rlnc_stats, '#A23B72')
     ]
 
@@ -586,7 +592,7 @@ def plot_chunk_statistics(rs_stats, rlnc_stats, output_file, node_count, num_chu
     print(f"{'='*60}\n")
 
 
-def plot_bandwidth_statistics(rs_stats, rlnc_stats, output_file, node_count, num_chunks, multiplier, msg_size, degree, disable_completion_signal=False):
+def plot_bandwidth_statistics(rs_stats, rlnc_stats, output_file, node_count, num_chunks, multiplier, msg_size, degree, disable_completion_signal=False, bitmap_threshold=None):
     """Plot time series of send and receive bandwidth (Mbps) for RS and RLNC protocols."""
     fig, axes = plt.subplots(2, 2, figsize=(16, 12))
     fig.suptitle(f'Network Bandwidth Over Time (Average Per Node)\n(Nodes: {node_count}, Peers: {degree}, Message Size: {msg_size}B)',
@@ -595,8 +601,11 @@ def plot_bandwidth_statistics(rs_stats, rlnc_stats, output_file, node_count, num
     # Add "(no completion signal)" suffix only when disabled (not when enabled, since that's default)
     signal_suffix = " (no completion signal)" if disable_completion_signal else ""
 
+    # Add bitmap threshold to RS label if provided (display as (1-threshold)*100%)
+    bitmap_suffix = f", bitmap={int((1.0 - bitmap_threshold) * 100)}%" if bitmap_threshold is not None else ""
+
     protocols = [
-        (f'RS(2k) (k={num_chunks}, D={multiplier}, routing=random){signal_suffix}', rs_stats, '#2E86AB'),
+        (f'RS(2k) (k={num_chunks}, D={multiplier}, routing=random{bitmap_suffix}){signal_suffix}', rs_stats, '#2E86AB'),
         (f'RLNC(n=kD) (k={num_chunks}, D={multiplier}, routing=random){signal_suffix}', rlnc_stats, '#A23B72')
     ]
 
@@ -723,13 +732,12 @@ def plot_bandwidth_statistics(rs_stats, rlnc_stats, output_file, node_count, num
     print(f"{'='*60}\n")
 
 
-def plot_cdfs(gossipsub_latencies, rs_latencies, rlnc_latencies, output_file, msg_size, num_chunks, node_count, degree, multiplier, disable_completion_signal=False):
-    """Plot CDF comparison of all three protocols."""
-    plt.figure(figsize=(10, 6))
+def plot_cdfs(gossipsub_latencies, rs_latencies_by_threshold, rlnc_latencies, output_file, msg_size, num_chunks, node_count, degree, multiplier, disable_completion_signal=False):
+    """Plot CDF comparison with multiple RS bitmap thresholds."""
+    plt.figure(figsize=(12, 6))
 
     # Compute CDFs
     gs_x, gs_y = compute_cdf(gossipsub_latencies)
-    rs_x, rs_y = compute_cdf(rs_latencies)
     rlnc_x, rlnc_y = compute_cdf(rlnc_latencies)
 
     # Add "(no completion signal)" suffix only when disabled (not when enabled, since that's default)
@@ -739,9 +747,17 @@ def plot_cdfs(gossipsub_latencies, rs_latencies, rlnc_latencies, output_file, ms
     # GossipSub as baseline (dashed line, neutral color)
     plt.plot(gs_x, gs_y, '--', linewidth=2.5, label='GossipSub (baseline, D=8)', color='gray', alpha=0.8)
 
-    # RS and RLNC as improvements (solid lines, distinct colors, no markers)
-    plt.plot(rs_x, rs_y, '-', linewidth=2, label=f'RS(2k) (k={num_chunks}, D={multiplier}, routing=random){signal_suffix}', color='#2E86AB')
+    # RLNC (solid line)
     plt.plot(rlnc_x, rlnc_y, '-', linewidth=2, label=f'RLNC(n=kD) (k={num_chunks}, D={multiplier}, routing=random){signal_suffix}', color='#A23B72')
+
+    # RS with different bitmap thresholds (solid lines, different shades of blue)
+    # Display as (1-threshold)*100% (when threshold=0.3, display as 70% meaning bitmap starts at 70% received)
+    rs_colors = ['#0d3b66', '#1a5276', '#2E86AB', '#5dade2']  # Very dark blue, dark blue, medium blue, light blue
+    for i, (threshold, rs_latencies) in enumerate(sorted(rs_latencies_by_threshold.items())):
+        rs_x, rs_y = compute_cdf(rs_latencies)
+        plt.plot(rs_x, rs_y, '-', linewidth=2,
+                label=f'RS(2k) bitmap={int((1.0 - threshold) * 100)}% (k={num_chunks}, D={multiplier}){signal_suffix}',
+                color=rs_colors[i % len(rs_colors)])
 
     plt.xlabel('Message Arrival Latency (ms)', fontsize=12)
     plt.ylabel('CDF', fontsize=12)
@@ -784,8 +800,9 @@ def plot_cdfs(gossipsub_latencies, rs_latencies, rlnc_latencies, output_file, ms
         print(f"  Max:        {np.max(latencies):.2f} ms")
 
     print_stats("GossipSub (baseline)", gossipsub_latencies)
-    print_stats("Reed-Solomon", rs_latencies)
     print_stats("RLNC", rlnc_latencies)
+    for threshold in sorted(rs_latencies_by_threshold.keys()):
+        print_stats(f"Reed-Solomon (bitmap={int((1.0 - threshold) * 100)}%)", rs_latencies_by_threshold[threshold])
     print(f"{'='*60}\n")
 
 
@@ -839,6 +856,9 @@ Examples:
 
     args = parser.parse_args()
 
+    # Hardcoded bitmap thresholds for RS protocol testing
+    bitmap_thresholds = [0.0, 0.2, 0.3, 0.5]
+
     print(f"""
 {'='*60}
 Protocol Comparison Tool
@@ -882,11 +902,13 @@ Bandwidth:       {args.bandwidth_output}
             print("\nError: Topology generation failed. Aborting.")
             sys.exit(1)
 
-        # Run simulations for all three protocols
-        protocols = ['gossipsub', 'rs', 'rlnc']
+        # Run simulations for all protocols
+        # For RS, test multiple bitmap thresholds
+        protocols = ['gossipsub', 'rlnc']
         success = {}
         timings = {}
 
+        # Run gossipsub and rlnc once
         for protocol in protocols:
             success[protocol], timings[protocol] = run_simulation(
                 protocol,
@@ -897,22 +919,57 @@ Bandwidth:       {args.bandwidth_output}
                 args.multiplier if protocol in ['rs', 'rlnc'] else None,
                 args.log_level,
                 args.disable_completion_signal,
-                args.bandwidth_interval
+                args.bandwidth_interval,
+                None
             )
 
             if not success[protocol]:
                 print(f"\nError: {protocol.upper()} simulation failed. Aborting.")
                 sys.exit(1)
 
+        # Run RS with different bitmap thresholds
+        # Rename shadow.data after each run to preserve results
+        for threshold in bitmap_thresholds:
+            protocol_name = f'rs_threshold_{threshold}'
+            success[protocol_name], timings[protocol_name] = run_simulation(
+                'rs',
+                args.node_count,
+                args.msg_size,
+                args.msg_count,
+                args.num_chunks,
+                args.multiplier,
+                args.log_level,
+                args.disable_completion_signal,
+                args.bandwidth_interval,
+                threshold
+            )
+
+            if not success[protocol_name]:
+                print(f"\nError: RS simulation with threshold {threshold} failed. Aborting.")
+                sys.exit(1)
+
+            # Rename shadow.data directory to preserve results for this threshold
+            import shutil
+            shadow_data_src = 'rs/shadow.data'
+            shadow_data_dst = f'rs/shadow.data.threshold_{threshold}'
+            if os.path.exists(shadow_data_dst):
+                shutil.rmtree(shadow_data_dst)
+            if os.path.exists(shadow_data_src):
+                shutil.move(shadow_data_src, shadow_data_dst)
+                print(f"✓ Saved RS results for threshold {threshold} to {shadow_data_dst}")
+
         # Print timing summary
         print(f"\n{'='*60}")
         print("Simulation Timing Summary")
         print(f"{'='*60}")
         total_time = sum(timings.values())
-        for protocol in protocols:
-            print(f"{protocol.upper():12s}: {timings[protocol]:6.2f} seconds")
+        for protocol in ['gossipsub', 'rlnc']:
+            print(f"{protocol.upper():20s}: {timings[protocol]:6.2f} seconds")
+        for threshold in bitmap_thresholds:
+            protocol_name = f'rs_threshold_{threshold}'
+            print(f"RS (threshold={threshold}):  {timings[protocol_name]:6.2f} seconds")
         print(f"{'─'*60}")
-        print(f"{'Total':12s}: {total_time:6.2f} seconds")
+        print(f"{'Total':20s}: {total_time:6.2f} seconds")
         print(f"{'='*60}")
     else:
         print(f"\n{'='*60}")
@@ -925,63 +982,128 @@ Bandwidth:       {args.bandwidth_output}
     print(f"{'='*60}")
 
     gossipsub_arrivals = parse_shadow_logs('gossipsub', args.node_count, args.msg_count)
-    rs_arrivals = parse_shadow_logs('rs', args.node_count, args.msg_count)
     rlnc_arrivals = parse_shadow_logs('rlnc', args.node_count, args.msg_count)
 
     print(f"✓ GossipSub: Extracted {sum(len(v) for v in gossipsub_arrivals.values())} message arrivals")
-    print(f"✓ Reed-Solomon: Extracted {sum(len(v) for v in rs_arrivals.values())} message arrivals")
     print(f"✓ RLNC: Extracted {sum(len(v) for v in rlnc_arrivals.values())} message arrivals")
+
+    # Parse RS logs for each threshold from renamed directories
+    rs_arrivals_by_threshold = {}
+    for threshold in bitmap_thresholds:
+        # Temporarily rename directory back to parse logs
+        import shutil
+        shadow_data_src = f'rs/shadow.data.threshold_{threshold}'
+        shadow_data_temp = 'rs/shadow.data'
+
+        if os.path.exists(shadow_data_temp):
+            shutil.rmtree(shadow_data_temp)
+        if os.path.exists(shadow_data_src):
+            shutil.copytree(shadow_data_src, shadow_data_temp)
+
+        rs_arrivals = parse_shadow_logs('rs', args.node_count, args.msg_count)
+        rs_arrivals_by_threshold[threshold] = rs_arrivals
+        print(f"✓ Reed-Solomon (threshold={threshold}): Extracted {sum(len(v) for v in rs_arrivals.values())} message arrivals")
+
+        # Clean up temp directory
+        if os.path.exists(shadow_data_temp):
+            shutil.rmtree(shadow_data_temp)
 
     # Calculate latencies
     gossipsub_latencies = calculate_message_latencies(gossipsub_arrivals)
-    rs_latencies = calculate_message_latencies(rs_arrivals)
     rlnc_latencies = calculate_message_latencies(rlnc_arrivals)
+    rs_latencies_by_threshold = {threshold: calculate_message_latencies(arrivals)
+                                  for threshold, arrivals in rs_arrivals_by_threshold.items()}
 
-    if not gossipsub_latencies and not rs_latencies and not rlnc_latencies:
+    has_data = gossipsub_latencies or rlnc_latencies or any(rs_latencies_by_threshold.values())
+    if not has_data:
         print("\nError: No message arrival data found in logs.")
         print("Make sure the simulations completed successfully and logs contain message arrival timestamps.")
         sys.exit(1)
 
     # Plot CDFs
-    plot_cdfs(gossipsub_latencies, rs_latencies, rlnc_latencies,
+    plot_cdfs(gossipsub_latencies, rs_latencies_by_threshold, rlnc_latencies,
               args.output, args.msg_size, args.num_chunks, args.node_count, args.degree, args.multiplier,
               args.disable_completion_signal)
 
-    # Parse and plot chunk statistics for RS and RLNC
+    # Parse and plot chunk statistics for RS (each threshold) and RLNC
     print(f"\n{'='*60}")
     print("Parsing chunk statistics...")
     print(f"{'='*60}")
 
-    rs_chunk_stats = parse_chunk_statistics('rs', args.node_count)
     rlnc_chunk_stats = parse_chunk_statistics('rlnc', args.node_count)
-
-    print(f"✓ Reed-Solomon: Extracted chunk statistics for {len(rs_chunk_stats)} nodes")
     print(f"✓ RLNC: Extracted chunk statistics for {len(rlnc_chunk_stats)} nodes")
 
-    if rs_chunk_stats or rlnc_chunk_stats:
-        plot_chunk_statistics(rs_chunk_stats, rlnc_chunk_stats,
-                            args.chunk_stats_output, args.node_count, args.num_chunks, args.multiplier,
-                            args.msg_size, args.degree, args.disable_completion_signal)
-    else:
-        print("\nWarning: No chunk statistics found in logs.")
+    # Parse chunk stats for each RS threshold
+    rs_chunk_stats_by_threshold = {}
+    for threshold in bitmap_thresholds:
+        # Temporarily copy directory back to parse
+        import shutil
+        shadow_data_src = f'rs/shadow.data.threshold_{threshold}'
+        shadow_data_temp = 'rs/shadow.data'
 
-    # Parse and plot bandwidth statistics for RS and RLNC
+        if os.path.exists(shadow_data_temp):
+            shutil.rmtree(shadow_data_temp)
+        if os.path.exists(shadow_data_src):
+            shutil.copytree(shadow_data_src, shadow_data_temp)
+
+        rs_chunk_stats = parse_chunk_statistics('rs', args.node_count)
+        rs_chunk_stats_by_threshold[threshold] = rs_chunk_stats
+        print(f"✓ Reed-Solomon (threshold={threshold}): Extracted chunk statistics for {len(rs_chunk_stats)} nodes")
+
+        # Clean up temp directory
+        if os.path.exists(shadow_data_temp):
+            shutil.rmtree(shadow_data_temp)
+
+    # Plot chunk statistics for each threshold separately
+    for threshold in bitmap_thresholds:
+        rs_chunk_stats = rs_chunk_stats_by_threshold[threshold]
+        if rs_chunk_stats or rlnc_chunk_stats:
+            output_file = args.chunk_stats_output.replace('.png', f'_threshold_{threshold}.png')
+            plot_chunk_statistics(rs_chunk_stats, rlnc_chunk_stats,
+                                output_file, args.node_count, args.num_chunks, args.multiplier,
+                                args.msg_size, args.degree, args.disable_completion_signal, threshold)
+        else:
+            print(f"\nWarning: No chunk statistics found for threshold {threshold}.")
+
+    # Parse and plot bandwidth statistics for RS (each threshold) and RLNC
     print(f"\n{'='*60}")
     print("Parsing bandwidth statistics...")
     print(f"{'='*60}")
 
-    rs_bandwidth_stats = parse_bandwidth_statistics('rs', args.node_count, args.bandwidth_interval)
     rlnc_bandwidth_stats = parse_bandwidth_statistics('rlnc', args.node_count, args.bandwidth_interval)
-
-    print(f"✓ Reed-Solomon: Extracted bandwidth statistics for {len(rs_bandwidth_stats)} nodes")
     print(f"✓ RLNC: Extracted bandwidth statistics for {len(rlnc_bandwidth_stats)} nodes")
 
-    if rs_bandwidth_stats or rlnc_bandwidth_stats:
-        plot_bandwidth_statistics(rs_bandwidth_stats, rlnc_bandwidth_stats,
-                                 args.bandwidth_output, args.node_count, args.num_chunks, args.multiplier,
-                                 args.msg_size, args.degree, args.disable_completion_signal)
-    else:
-        print("\nWarning: No bandwidth statistics found in logs.")
+    # Parse bandwidth stats for each RS threshold
+    rs_bandwidth_stats_by_threshold = {}
+    for threshold in bitmap_thresholds:
+        # Temporarily copy directory back to parse
+        import shutil
+        shadow_data_src = f'rs/shadow.data.threshold_{threshold}'
+        shadow_data_temp = 'rs/shadow.data'
+
+        if os.path.exists(shadow_data_temp):
+            shutil.rmtree(shadow_data_temp)
+        if os.path.exists(shadow_data_src):
+            shutil.copytree(shadow_data_src, shadow_data_temp)
+
+        rs_bandwidth_stats = parse_bandwidth_statistics('rs', args.node_count, args.bandwidth_interval)
+        rs_bandwidth_stats_by_threshold[threshold] = rs_bandwidth_stats
+        print(f"✓ Reed-Solomon (threshold={threshold}): Extracted bandwidth statistics for {len(rs_bandwidth_stats)} nodes")
+
+        # Clean up temp directory
+        if os.path.exists(shadow_data_temp):
+            shutil.rmtree(shadow_data_temp)
+
+    # Plot bandwidth statistics for each threshold separately
+    for threshold in bitmap_thresholds:
+        rs_bandwidth_stats = rs_bandwidth_stats_by_threshold[threshold]
+        if rs_bandwidth_stats or rlnc_bandwidth_stats:
+            output_file = args.bandwidth_output.replace('.png', f'_threshold_{threshold}.png')
+            plot_bandwidth_statistics(rs_bandwidth_stats, rlnc_bandwidth_stats,
+                                     output_file, args.node_count, args.num_chunks, args.multiplier,
+                                     args.msg_size, args.degree, args.disable_completion_signal, threshold)
+        else:
+            print(f"\nWarning: No bandwidth statistics found for threshold {threshold}.")
 
     print(f"\n{'='*60}")
     print("✓ Protocol comparison completed successfully!")
