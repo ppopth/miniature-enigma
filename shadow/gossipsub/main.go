@@ -110,6 +110,7 @@ func main() {
 
 	ps, err := pubsub.NewGossipSub(ctx, h,
 		pubsub.WithGossipSubParams(gossipsubParams),
+		pubsub.WithMaxMessageSize(1<<30), // 1GB max message size
 	)
 	if err != nil {
 		log.Fatalf("Failed to create gossipsub: %v", err)
