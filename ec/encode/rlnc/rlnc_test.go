@@ -15,11 +15,13 @@ func TestRlncEncoderBasic(t *testing.T) {
 	f := field.NewPrimeField(big.NewInt(4_294_967_311))
 
 	config := &RlncEncoderConfig{
-		MessageChunkSize:   8,
-		NetworkChunkSize:   9,
-		ElementsPerChunk:   2,
-		MaxCoefficientBits: 16,
-		Field:              f,
+		RlncCommonConfig: RlncCommonConfig{
+			MessageChunkSize:   8,
+			NetworkChunkSize:   9,
+			ElementsPerChunk:   2,
+			MaxCoefficientBits: 16,
+			Field:              f,
+		},
 	}
 
 	encoder, err := NewRlncEncoder(config)
@@ -63,11 +65,13 @@ func TestRlncEncoderMultipleChunks(t *testing.T) {
 	f := field.NewPrimeField(big.NewInt(4_294_967_311))
 
 	config := &RlncEncoderConfig{
-		MessageChunkSize:   4,
-		NetworkChunkSize:   16,
-		ElementsPerChunk:   2,
-		MaxCoefficientBits: 16,
-		Field:              f,
+		RlncCommonConfig: RlncCommonConfig{
+			MessageChunkSize:   4,
+			NetworkChunkSize:   16,
+			ElementsPerChunk:   2,
+			MaxCoefficientBits: 16,
+			Field:              f,
+		},
 	}
 
 	encoder, err := NewRlncEncoder(config)
@@ -112,11 +116,13 @@ func TestRlncEncoderVerifyThenAddChunk(t *testing.T) {
 	f := field.NewPrimeField(big.NewInt(4_294_967_311))
 
 	config := &RlncEncoderConfig{
-		MessageChunkSize:   4,
-		NetworkChunkSize:   16,
-		ElementsPerChunk:   2,
-		MaxCoefficientBits: 16,
-		Field:              f,
+		RlncCommonConfig: RlncCommonConfig{
+			MessageChunkSize:   4,
+			NetworkChunkSize:   16,
+			ElementsPerChunk:   2,
+			MaxCoefficientBits: 16,
+			Field:              f,
+		},
 	}
 
 	encoder, err := NewRlncEncoder(config)
@@ -162,11 +168,13 @@ func TestRlncEncoderEmitChunk(t *testing.T) {
 	f := field.NewPrimeField(big.NewInt(4_294_967_311))
 
 	config := &RlncEncoderConfig{
-		MessageChunkSize:   4,
-		NetworkChunkSize:   16,
-		ElementsPerChunk:   2,
-		MaxCoefficientBits: 16,
-		Field:              f,
+		RlncCommonConfig: RlncCommonConfig{
+			MessageChunkSize:   4,
+			NetworkChunkSize:   16,
+			ElementsPerChunk:   2,
+			MaxCoefficientBits: 16,
+			Field:              f,
+		},
 	}
 
 	encoder, err := NewRlncEncoder(config)
@@ -220,11 +228,13 @@ func TestRlncEncoderEncodeDecodeChunk(t *testing.T) {
 	f := field.NewPrimeField(big.NewInt(4_294_967_311))
 
 	config := &RlncEncoderConfig{
-		MessageChunkSize:   4,
-		NetworkChunkSize:   16,
-		ElementsPerChunk:   2,
-		MaxCoefficientBits: 16,
-		Field:              f,
+		RlncCommonConfig: RlncCommonConfig{
+			MessageChunkSize:   4,
+			NetworkChunkSize:   16,
+			ElementsPerChunk:   2,
+			MaxCoefficientBits: 16,
+			Field:              f,
+		},
 	}
 
 	encoder, err := NewRlncEncoder(config)
@@ -279,11 +289,13 @@ func TestRlncEncoderGetMethods(t *testing.T) {
 	f := field.NewPrimeField(big.NewInt(4_294_967_311))
 
 	config := &RlncEncoderConfig{
-		MessageChunkSize:   4,
-		NetworkChunkSize:   16,
-		ElementsPerChunk:   2,
-		MaxCoefficientBits: 16,
-		Field:              f,
+		RlncCommonConfig: RlncCommonConfig{
+			MessageChunkSize:   4,
+			NetworkChunkSize:   16,
+			ElementsPerChunk:   2,
+			MaxCoefficientBits: 16,
+			Field:              f,
+		},
 	}
 
 	encoder, err := NewRlncEncoder(config)
@@ -348,11 +360,13 @@ func TestRlncEncoderInvalidConfig(t *testing.T) {
 
 	// Test invalid ElementsPerChunk
 	config := &RlncEncoderConfig{
-		MessageChunkSize:   7, // Not divisible by ElementsPerChunk (7*8=56 not divisible by 3)
-		NetworkChunkSize:   16,
-		ElementsPerChunk:   3,
-		MaxCoefficientBits: 16,
-		Field:              f,
+		RlncCommonConfig: RlncCommonConfig{
+			MessageChunkSize:   7, // Not divisible by ElementsPerChunk (7*8=56 not divisible by 3)
+			NetworkChunkSize:   16,
+			ElementsPerChunk:   3,
+			MaxCoefficientBits: 16,
+			Field:              f,
+		},
 	}
 
 	_, err := NewRlncEncoder(config)
@@ -399,11 +413,13 @@ func TestRlncEncoderBinaryField(t *testing.T) {
 	f := field.NewBinaryFieldGF2_32()
 
 	config := &RlncEncoderConfig{
-		MessageChunkSize:   8,
-		NetworkChunkSize:   9,
-		ElementsPerChunk:   2,
-		MaxCoefficientBits: 16,
-		Field:              f,
+		RlncCommonConfig: RlncCommonConfig{
+			MessageChunkSize:   8,
+			NetworkChunkSize:   9,
+			ElementsPerChunk:   2,
+			MaxCoefficientBits: 16,
+			Field:              f,
+		},
 	}
 
 	encoder, err := NewRlncEncoder(config)
@@ -443,11 +459,13 @@ func BenchmarkRlncGenerateThenAddChunks(b *testing.B) {
 	f := field.NewPrimeField(p)
 
 	config := &RlncEncoderConfig{
-		MessageChunkSize:   1024,
-		NetworkChunkSize:   1030,
-		ElementsPerChunk:   8 * 1024 / f.BitsPerDataElement(),
-		MaxCoefficientBits: 16,
-		Field:              f,
+		RlncCommonConfig: RlncCommonConfig{
+			MessageChunkSize:   1024,
+			NetworkChunkSize:   1030,
+			ElementsPerChunk:   8 * 1024 / f.BitsPerDataElement(),
+			MaxCoefficientBits: 16,
+			Field:              f,
+		},
 	}
 
 	encoder, err := NewRlncEncoder(config)
@@ -484,11 +502,13 @@ func BenchmarkRlncEmitChunk(b *testing.B) {
 	f := field.NewPrimeField(p)
 
 	config := &RlncEncoderConfig{
-		MessageChunkSize:   1024,
-		NetworkChunkSize:   1030,
-		ElementsPerChunk:   8 * 1024 / f.BitsPerDataElement(),
-		MaxCoefficientBits: 16,
-		Field:              f,
+		RlncCommonConfig: RlncCommonConfig{
+			MessageChunkSize:   1024,
+			NetworkChunkSize:   1030,
+			ElementsPerChunk:   8 * 1024 / f.BitsPerDataElement(),
+			MaxCoefficientBits: 16,
+			Field:              f,
+		},
 	}
 
 	encoder, err := NewRlncEncoder(config)
@@ -524,11 +544,13 @@ func BenchmarkRlncVerifyThenAddChunk(b *testing.B) {
 	f := field.NewPrimeField(p)
 
 	config := &RlncEncoderConfig{
-		MessageChunkSize:   1024,
-		NetworkChunkSize:   1030,
-		ElementsPerChunk:   8 * 1024 / f.BitsPerDataElement(),
-		MaxCoefficientBits: 16,
-		Field:              f,
+		RlncCommonConfig: RlncCommonConfig{
+			MessageChunkSize:   1024,
+			NetworkChunkSize:   1030,
+			ElementsPerChunk:   8 * 1024 / f.BitsPerDataElement(),
+			MaxCoefficientBits: 16,
+			Field:              f,
+		},
 	}
 
 	encoder, err := NewRlncEncoder(config)
@@ -567,11 +589,13 @@ func BenchmarkRlncReconstructMessage(b *testing.B) {
 	f := field.NewPrimeField(p)
 
 	config := &RlncEncoderConfig{
-		MessageChunkSize:   1024,
-		NetworkChunkSize:   1030,
-		ElementsPerChunk:   8 * 1024 / f.BitsPerDataElement(),
-		MaxCoefficientBits: 16,
-		Field:              f,
+		RlncCommonConfig: RlncCommonConfig{
+			MessageChunkSize:   1024,
+			NetworkChunkSize:   1030,
+			ElementsPerChunk:   8 * 1024 / f.BitsPerDataElement(),
+			MaxCoefficientBits: 16,
+			Field:              f,
+		},
 	}
 
 	// Test reconstruction with different message sizes
@@ -617,11 +641,13 @@ func BenchmarkRlncEncodeDecode(b *testing.B) {
 	f := field.NewPrimeField(p)
 
 	config := &RlncEncoderConfig{
-		MessageChunkSize:   1024,
-		NetworkChunkSize:   1030,
-		ElementsPerChunk:   8 * 1024 / f.BitsPerDataElement(),
-		MaxCoefficientBits: 16,
-		Field:              f,
+		RlncCommonConfig: RlncCommonConfig{
+			MessageChunkSize:   1024,
+			NetworkChunkSize:   1030,
+			ElementsPerChunk:   8 * 1024 / f.BitsPerDataElement(),
+			MaxCoefficientBits: 16,
+			Field:              f,
+		},
 	}
 
 	encoder, err := NewRlncEncoder(config)
@@ -657,11 +683,13 @@ func BenchmarkRlncWithBinaryField(b *testing.B) {
 	f := field.NewBinaryFieldGF2_32()
 
 	config := &RlncEncoderConfig{
-		MessageChunkSize:   1024,
-		NetworkChunkSize:   1030,
-		ElementsPerChunk:   8 * 1024 / f.BitsPerDataElement(),
-		MaxCoefficientBits: 16,
-		Field:              f,
+		RlncCommonConfig: RlncCommonConfig{
+			MessageChunkSize:   1024,
+			NetworkChunkSize:   1030,
+			ElementsPerChunk:   8 * 1024 / f.BitsPerDataElement(),
+			MaxCoefficientBits: 16,
+			Field:              f,
+		},
 	}
 
 	// Create separate encoder and decoder

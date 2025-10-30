@@ -123,6 +123,13 @@ func (f *BinaryField) BitsPerElement() int {
 	return f.n
 }
 
+// Order returns the order (size) of the field, which is 2^n for a binary field
+func (f *BinaryField) Order() *big.Int {
+	order := new(big.Int).SetInt64(1)
+	order.Lsh(order, uint(f.n)) // 2^n
+	return order
+}
+
 // BinaryFieldElement methods implementing Element interface
 
 // Add returns e + b in the field (XOR operation)

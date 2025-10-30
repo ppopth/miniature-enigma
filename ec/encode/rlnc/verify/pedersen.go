@@ -69,18 +69,25 @@ type ExtraData struct {
 	BLSSignature []byte   // BLS signature, 96 bytes
 }
 
-// NewPedersenVerifier creates a new Pedersen commitment verifier using the specified group
-func NewPedersenVerifier(networkChunkSize, elementsPerChunk int, config *PedersenConfig) (*PedersenVerifier, error) {
+// NewPedersenVerifier creates a new Pedersen commitment verifier using the specified configurations
+func NewPedersenVerifier(rlncConfig *rlnc.RlncCommonConfig, pedersenConfig *PedersenConfig) (*PedersenVerifier, error) {
+	if rlncConfig == nil {
+		return nil, fmt.Errorf("rlncConfig cannot be nil")
+	}
+	if rlncConfig.Field == nil {
+		return nil, fmt.Errorf("rlncConfig.Field cannot be nil")
+	}
+
 	pv := &PedersenVerifier{
-		chunkSize: networkChunkSize,
+		chunkSize: rlncConfig.NetworkChunkSize,
 	}
 
 	// Set configuration if provided, otherwise use defaults
-	if config != nil {
-		pv.group = config.Group
-		pv.blsSecretKey = config.BLSSecretKey
-		pv.publicKeyCallback = config.PublicKeyCallback
-		pv.publisherID = config.PublisherID
+	if pedersenConfig != nil {
+		pv.group = pedersenConfig.Group
+		pv.blsSecretKey = pedersenConfig.BLSSecretKey
+		pv.publicKeyCallback = pedersenConfig.PublicKeyCallback
+		pv.publisherID = pedersenConfig.PublisherID
 	}
 
 	// Use default group if not provided
@@ -91,15 +98,24 @@ func NewPedersenVerifier(networkChunkSize, elementsPerChunk int, config *Pederse
 	// Create the scalar field for the group
 	pv.scalarField = group.NewScalarField(pv.group)
 
-	pv.networkBitsPerElement = 8 * networkChunkSize / elementsPerChunk
+	// Verify that the RLNC field and Pedersen group have the same order
+	// The RLNC field order must match the scalar field order of the group
+	rlncOrder := rlncConfig.Field.Order()
+	scalarOrder := pv.scalarField.Order()
+	if rlncOrder.Cmp(scalarOrder) != 0 {
+		return nil, fmt.Errorf("rlncConfig.Field order (%s) does not match pedersenConfig.Group scalar field order (%s)",
+			rlncOrder.String(), scalarOrder.String())
+	}
+
+	pv.networkBitsPerElement = 8 * rlncConfig.NetworkChunkSize / rlncConfig.ElementsPerChunk
 	if pv.networkBitsPerElement < pv.scalarField.BitsPerElement() {
 		return nil, fmt.Errorf("(8*networkChunkSize)/elementsPerChunk (%d) is too low for the field", pv.networkBitsPerElement)
 	}
 
 	// Generate deterministic generator points for the commitment scheme
-	pv.generators = make([]group.GroupElement, elementsPerChunk)
+	pv.generators = make([]group.GroupElement, rlncConfig.ElementsPerChunk)
 
-	for i := 0; i < elementsPerChunk; i++ {
+	for i := 0; i < rlncConfig.ElementsPerChunk; i++ {
 		pv.generators[i] = pv.generatePoint(i)
 	}
 

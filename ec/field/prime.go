@@ -107,6 +107,11 @@ func (f *PrimeField) BitsPerElement() int {
 	return f.p.BitLen()
 }
 
+// Order returns the order (size) of the field, which is p for a prime field
+func (f *PrimeField) Order() *big.Int {
+	return new(big.Int).Set(f.p)
+}
+
 // PrimeFieldElement methods implementing Element interface
 
 // Add returns e + b in the field

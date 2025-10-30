@@ -30,11 +30,13 @@ func TestRlncSparse(t *testing.T) {
 
 		// Create RLNC encoder
 		rlncConfig := &rlnc.RlncEncoderConfig{
-			MessageChunkSize:   8,
-			NetworkChunkSize:   9,
-			ElementsPerChunk:   2,
-			MaxCoefficientBits: 16,
-			Field:              f,
+			RlncCommonConfig: rlnc.RlncCommonConfig{
+				MessageChunkSize:   8,
+				NetworkChunkSize:   9,
+				ElementsPerChunk:   2,
+				MaxCoefficientBits: 16,
+				Field:              f,
+			},
 		}
 		encoder, err := rlnc.NewRlncEncoder(rlncConfig)
 		if err != nil {
@@ -120,11 +122,13 @@ func TestRlncDense(t *testing.T) {
 
 		// Create RLNC encoder
 		rlncConfig := &rlnc.RlncEncoderConfig{
-			MessageChunkSize:   8,
-			NetworkChunkSize:   9,
-			ElementsPerChunk:   2,
-			MaxCoefficientBits: 16,
-			Field:              f,
+			RlncCommonConfig: rlnc.RlncCommonConfig{
+				MessageChunkSize:   8,
+				NetworkChunkSize:   9,
+				ElementsPerChunk:   2,
+				MaxCoefficientBits: 16,
+				Field:              f,
+			},
 		}
 		encoder, err := rlnc.NewRlncEncoder(rlncConfig)
 		if err != nil {
@@ -212,11 +216,13 @@ func TestRlncPublish(t *testing.T) {
 
 		// Create RLNC encoder
 		rlncConfig := &rlnc.RlncEncoderConfig{
-			MessageChunkSize:   8,
-			NetworkChunkSize:   9,
-			ElementsPerChunk:   2,
-			MaxCoefficientBits: 16,
-			Field:              f,
+			RlncCommonConfig: rlnc.RlncCommonConfig{
+				MessageChunkSize:   8,
+				NetworkChunkSize:   9,
+				ElementsPerChunk:   2,
+				MaxCoefficientBits: 16,
+				Field:              f,
+			},
 		}
 		encoder, err := rlnc.NewRlncEncoder(rlncConfig)
 		if err != nil {
@@ -293,11 +299,13 @@ func TestRlncPublishWithGF232(t *testing.T) {
 
 		// Create RLNC encoder
 		rlncConfig := &rlnc.RlncEncoderConfig{
-			MessageChunkSize:   8,
-			NetworkChunkSize:   9,
-			ElementsPerChunk:   2,
-			MaxCoefficientBits: 16,
-			Field:              f,
+			RlncCommonConfig: rlnc.RlncCommonConfig{
+				MessageChunkSize:   8,
+				NetworkChunkSize:   9,
+				ElementsPerChunk:   2,
+				MaxCoefficientBits: 16,
+				Field:              f,
+			},
 		}
 		encoder, err := rlnc.NewRlncEncoder(rlncConfig)
 		if err != nil {
@@ -852,11 +860,13 @@ func TestCompletionSignalTracking(t *testing.T) {
 		f := field.NewPrimeField(big.NewInt(4_294_967_311))
 
 		rlncConfig := &rlnc.RlncEncoderConfig{
-			MessageChunkSize:   8,
-			NetworkChunkSize:   9,
-			ElementsPerChunk:   2,
-			MaxCoefficientBits: 16,
-			Field:              f,
+			RlncCommonConfig: rlnc.RlncCommonConfig{
+				MessageChunkSize:   8,
+				NetworkChunkSize:   9,
+				ElementsPerChunk:   2,
+				MaxCoefficientBits: 16,
+				Field:              f,
+			},
 		}
 		encoder, err := rlnc.NewRlncEncoder(rlncConfig)
 		if err != nil {
@@ -934,11 +944,13 @@ func TestCompletionSignalPreventsChunkSending(t *testing.T) {
 		f := field.NewPrimeField(big.NewInt(4_294_967_311))
 
 		rlncConfig := &rlnc.RlncEncoderConfig{
-			MessageChunkSize:   8,
-			NetworkChunkSize:   9,
-			ElementsPerChunk:   2,
-			MaxCoefficientBits: 16,
-			Field:              f,
+			RlncCommonConfig: rlnc.RlncCommonConfig{
+				MessageChunkSize:   8,
+				NetworkChunkSize:   9,
+				ElementsPerChunk:   2,
+				MaxCoefficientBits: 16,
+				Field:              f,
+			},
 		}
 		encoder, err := rlnc.NewRlncEncoder(rlncConfig)
 		if err != nil {
@@ -1038,11 +1050,13 @@ func TestDisableCompletionSignal(t *testing.T) {
 		f := field.NewPrimeField(big.NewInt(4_294_967_311))
 
 		rlncConfig := &rlnc.RlncEncoderConfig{
-			MessageChunkSize:   8,
-			NetworkChunkSize:   9,
-			ElementsPerChunk:   2,
-			MaxCoefficientBits: 16,
-			Field:              f,
+			RlncCommonConfig: rlnc.RlncCommonConfig{
+				MessageChunkSize:   8,
+				NetworkChunkSize:   9,
+				ElementsPerChunk:   2,
+				MaxCoefficientBits: 16,
+				Field:              f,
+			},
 		}
 		encoder, err := rlnc.NewRlncEncoder(rlncConfig)
 		if err != nil {

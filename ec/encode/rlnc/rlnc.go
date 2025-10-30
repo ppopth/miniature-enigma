@@ -43,7 +43,8 @@ func (c Chunk) EncodeExtra() []byte {
 	return data
 }
 
-type RlncEncoderConfig struct {
+// RlncCommonConfig contains the common RLNC configuration parameters
+type RlncCommonConfig struct {
 	// Message chunk size in bytes. When the message is larger than this size, it will be chunked, so
 	// every chunk will be of this size.
 	MessageChunkSize int
@@ -55,6 +56,11 @@ type RlncEncoderConfig struct {
 	MaxCoefficientBits int
 	// Finite field for linear algebra operations
 	Field field.Field
+}
+
+type RlncEncoderConfig struct {
+	// Common configuration
+	RlncCommonConfig
 	// Chunk verifier for verification (optional)
 	Verifier ChunkVerifier
 }
@@ -142,11 +148,13 @@ func DefaultRlncEncoderConfig() *RlncEncoderConfig {
 	finiteField := field.NewPrimeField(p)
 
 	return &RlncEncoderConfig{
-		MessageChunkSize:   1024, // 1KB chunks are a good balance
-		NetworkChunkSize:   1030, // Slightly larger to accommodate field encoding
-		MaxCoefficientBits: 16,   // 16-bit coefficients give good randomness
-		ElementsPerChunk:   8 * 1024 / finiteField.BitsPerDataElement(),
-		Field:              finiteField,
+		RlncCommonConfig: RlncCommonConfig{
+			MessageChunkSize:   1024, // 1KB chunks are a good balance
+			NetworkChunkSize:   1030, // Slightly larger to accommodate field encoding
+			MaxCoefficientBits: 16,   // 16-bit coefficients give good randomness
+			ElementsPerChunk:   8 * 1024 / finiteField.BitsPerDataElement(),
+			Field:              finiteField,
+		},
 	}
 }
 

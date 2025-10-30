@@ -19,9 +19,20 @@ import (
 	"github.com/herumi/bls-eth-go-binary/bls"
 )
 
+// Helper function to create a test RLNC common config
+func createTestRlncConfig(networkChunkSize, elementsPerChunk int) *rlnc.RlncCommonConfig {
+	f := group.NewScalarField(Ristretto255Group)
+	return &rlnc.RlncCommonConfig{
+		NetworkChunkSize: networkChunkSize,
+		ElementsPerChunk: elementsPerChunk,
+		Field:            f,
+	}
+}
+
 // TestGenExtras tests the GenExtras method that generates Pedersen commitments
 func TestGenExtras(t *testing.T) {
-	p, err := NewPedersenVerifier(1024, 8, nil)
+	rlncConfig := createTestRlncConfig(1024, 8)
+	p, err := NewPedersenVerifier(rlncConfig, nil)
 	if err != nil {
 		t.Fatalf("Failed to create PedersenVerifier: %v", err)
 	}
@@ -47,7 +58,8 @@ func TestGenExtras(t *testing.T) {
 
 // TestGenExtrasMultipleChunks tests GenExtras with multiple chunks
 func TestGenExtrasMultipleChunks(t *testing.T) {
-	p, err := NewPedersenVerifier(1024, 8, nil)
+	rlncConfig := createTestRlncConfig(1024, 8)
+	p, err := NewPedersenVerifier(rlncConfig, nil)
 	if err != nil {
 		t.Fatalf("Failed to create PedersenVerifier: %v", err)
 	}
@@ -88,7 +100,8 @@ func TestGenExtrasMultipleChunks(t *testing.T) {
 
 // TestGenExtrasEmptyInput tests GenExtras with empty input
 func TestGenExtrasEmptyInput(t *testing.T) {
-	p, err := NewPedersenVerifier(1024, 8, nil)
+	rlncConfig := createTestRlncConfig(1024, 8)
+	p, err := NewPedersenVerifier(rlncConfig, nil)
 	if err != nil {
 		t.Fatalf("Failed to create PedersenVerifier: %v", err)
 	}
@@ -105,7 +118,8 @@ func TestGenExtrasEmptyInput(t *testing.T) {
 
 // TestGenExtrasConsistency tests that GenExtras produces consistent results
 func TestGenExtrasConsistency(t *testing.T) {
-	p, err := NewPedersenVerifier(1024, 8, nil)
+	rlncConfig := createTestRlncConfig(1024, 8)
+	p, err := NewPedersenVerifier(rlncConfig, nil)
 	if err != nil {
 		t.Fatalf("Failed to create PedersenVerifier: %v", err)
 	}
@@ -132,7 +146,8 @@ func TestGenExtrasConsistency(t *testing.T) {
 
 // TestGenExtrasDifferentChunks tests that different chunks produce different commitments
 func TestGenExtrasDifferentChunks(t *testing.T) {
-	p, err := NewPedersenVerifier(1024, 8, nil)
+	rlncConfig := createTestRlncConfig(1024, 8)
+	p, err := NewPedersenVerifier(rlncConfig, nil)
 	if err != nil {
 		t.Fatalf("Failed to create PedersenVerifier: %v", err)
 	}
@@ -160,7 +175,8 @@ func TestGenExtrasDifferentChunks(t *testing.T) {
 
 // TestVerify tests the Verify method with various scenarios
 func TestVerify(t *testing.T) {
-	p, err := NewPedersenVerifier(1024, 8, nil)
+	rlncConfig := createTestRlncConfig(1024, 8)
+	p, err := NewPedersenVerifier(rlncConfig, nil)
 	if err != nil {
 		t.Fatalf("Failed to create PedersenVerifier: %v", err)
 	}
@@ -215,7 +231,8 @@ func TestVerify(t *testing.T) {
 
 // TestVerifyLinearCombination tests Verify with linear combinations
 func TestVerifyLinearCombination(t *testing.T) {
-	p, err := NewPedersenVerifier(1024, 8, nil)
+	rlncConfig := createTestRlncConfig(1024, 8)
+	p, err := NewPedersenVerifier(rlncConfig, nil)
 	if err != nil {
 		t.Fatalf("Failed to create PedersenVerifier: %v", err)
 	}
@@ -274,7 +291,8 @@ func TestVerifyLinearCombination(t *testing.T) {
 
 // TestVerifyCorruptedExtraData tests Verify with various corrupted extra data
 func TestVerifyCorruptedExtraData(t *testing.T) {
-	p, err := NewPedersenVerifier(1024, 8, nil)
+	rlncConfig := createTestRlncConfig(1024, 8)
+	p, err := NewPedersenVerifier(rlncConfig, nil)
 	if err != nil {
 		t.Fatalf("Failed to create PedersenVerifier: %v", err)
 	}
@@ -331,11 +349,12 @@ func TestGenExtrasWithBLS(t *testing.T) {
 	var sk bls.SecretKey
 	sk.SetByCSPRNG()
 
+	rlncConfig := createTestRlncConfig(1024, 8)
 	config := &PedersenConfig{
 		BLSSecretKey: &sk,
 		PublisherID:  0,
 	}
-	p, err := NewPedersenVerifier(1024, 8, config)
+	p, err := NewPedersenVerifier(rlncConfig, config)
 	if err != nil {
 		t.Fatalf("Failed to create PedersenVerifier with BLS key: %v", err)
 	}
@@ -391,12 +410,13 @@ func TestVerifyWithBLSSignature(t *testing.T) {
 		return pk
 	}
 
+	rlncConfig := createTestRlncConfig(1024, 8)
 	config := &PedersenConfig{
 		BLSSecretKey:      &sk,
 		PublicKeyCallback: publicKeyCallback,
 		PublisherID:       0,
 	}
-	p, err := NewPedersenVerifier(1024, 8, config)
+	p, err := NewPedersenVerifier(rlncConfig, config)
 	if err != nil {
 		t.Fatalf("Failed to create PedersenVerifier: %v", err)
 	}
@@ -443,7 +463,8 @@ func TestVerifyWithBLSSignature(t *testing.T) {
 // TestVerifyWithoutCallback tests that verification works when no callback is provided
 func TestVerifyWithoutCallback(t *testing.T) {
 	// Create algorithm without callback (skips BLS verification)
-	p, err := NewPedersenVerifier(1024, 8, nil)
+	rlncConfig := createTestRlncConfig(1024, 8)
+	p, err := NewPedersenVerifier(rlncConfig, nil)
 	if err != nil {
 		t.Fatalf("Failed to create PedersenVerifier: %v", err)
 	}
@@ -476,24 +497,29 @@ func TestRlncWithPedersenVerification(t *testing.T) {
 	var topics []*pubsub.Topic
 	var subs []*pubsub.Subscription
 	for _, ps := range psubs {
-		// Create Pedersen verifier
-		pedersenVerifier, err := NewPedersenVerifier(64, 2, nil)
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		// Create RLNC encoder with Pedersen verification
-		f := group.NewScalarField(pedersenVerifier.group)
-		rlncConfig := &rlnc.RlncEncoderConfig{
+		// Create RLNC common config
+		f := group.NewScalarField(Ristretto255Group)
+		rlncConfig := &rlnc.RlncCommonConfig{
 			MessageChunkSize:   63,
 			NetworkChunkSize:   64,
 			ElementsPerChunk:   2,
 			MaxCoefficientBits: 16,
 			Field:              f,
-			Verifier:           pedersenVerifier,
 		}
 
-		encoder, err := rlnc.NewRlncEncoder(rlncConfig)
+		// Create Pedersen verifier using the common config
+		pedersenVerifier, err := NewPedersenVerifier(rlncConfig, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		// Create RLNC encoder with Pedersen verification using the same common config
+		encoderConfig := &rlnc.RlncEncoderConfig{
+			RlncCommonConfig: *rlncConfig,
+			Verifier:         pedersenVerifier,
+		}
+
+		encoder, err := rlnc.NewRlncEncoder(encoderConfig)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -699,7 +725,8 @@ func BenchmarkPedersenGenerateExtras(b *testing.B) {
 
 	for _, size := range sizes {
 		b.Run(size.name, func(b *testing.B) {
-			pv, err := NewPedersenVerifier(size.chunkSize, 8, nil)
+			rlncConfig := createTestRlncConfig(size.chunkSize, 8)
+			pv, err := NewPedersenVerifier(rlncConfig, nil)
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -724,22 +751,28 @@ func BenchmarkPedersenGenerateExtras(b *testing.B) {
 }
 
 func BenchmarkPedersenVerify(b *testing.B) {
-	pv, err := NewPedersenVerifier(64, 1, nil)
-	if err != nil {
-		b.Fatal(err)
-	}
-
-	// Create the chunk with proper setup
+	// Create RLNC common config
 	f := group.NewScalarField(Ristretto255Group)
-	rlncConfig := &rlnc.RlncEncoderConfig{
+	rlncConfig := &rlnc.RlncCommonConfig{
 		MessageChunkSize:   8,  // Use 8 bytes (64 bits) to stay within field capacity
 		NetworkChunkSize:   64, // Network chunk size should be larger
 		ElementsPerChunk:   1,  // One element per chunk to avoid field overflow
 		MaxCoefficientBits: 16,
 		Field:              f,
-		Verifier:           pv,
 	}
-	encoder, err := rlnc.NewRlncEncoder(rlncConfig)
+
+	// Create Pedersen verifier using the common config
+	pv, err := NewPedersenVerifier(rlncConfig, nil)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	// Create RLNC encoder with Pedersen verification using the same common config
+	encoderConfig := &rlnc.RlncEncoderConfig{
+		RlncCommonConfig: *rlncConfig,
+		Verifier:         pv,
+	}
+	encoder, err := rlnc.NewRlncEncoder(encoderConfig)
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -769,7 +802,8 @@ func BenchmarkPedersenVerify(b *testing.B) {
 }
 
 func BenchmarkPedersenCombineExtras(b *testing.B) {
-	pv, err := NewPedersenVerifier(1024, 8, nil)
+	rlncConfig := createTestRlncConfig(1024, 8)
+	pv, err := NewPedersenVerifier(rlncConfig, nil)
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -815,7 +849,8 @@ func BenchmarkPedersenWithDifferentElementCounts(b *testing.B) {
 
 	for _, elemCount := range elementCounts {
 		b.Run(fmt.Sprintf("elements=%d", elemCount), func(b *testing.B) {
-			pv, err := NewPedersenVerifier(chunkSize, elemCount, nil)
+			rlncConfig := createTestRlncConfig(chunkSize, elemCount)
+			pv, err := NewPedersenVerifier(rlncConfig, nil)
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -841,19 +876,26 @@ func BenchmarkPedersenWithDifferentElementCounts(b *testing.B) {
 }
 
 func BenchmarkPedersenEndToEnd(b *testing.B) {
-	pv, err := NewPedersenVerifier(64, 1, nil)
-	if err != nil {
-		b.Fatal(err)
-	}
-
+	// Create RLNC common config
 	f := group.NewScalarField(Ristretto255Group)
-	rlncConfig := &rlnc.RlncEncoderConfig{
+	rlncConfig := &rlnc.RlncCommonConfig{
 		MessageChunkSize:   8,  // Use 8 bytes (64 bits) to stay within field capacity
 		NetworkChunkSize:   64, // Network chunk size should be larger
 		ElementsPerChunk:   1,  // One element per chunk to avoid field overflow
 		MaxCoefficientBits: 16,
 		Field:              f,
-		Verifier:           pv,
+	}
+
+	// Create Pedersen verifier using the common config
+	pv, err := NewPedersenVerifier(rlncConfig, nil)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	// Create RLNC encoder with Pedersen verification using the same common config
+	encoderConfig := &rlnc.RlncEncoderConfig{
+		RlncCommonConfig: *rlncConfig,
+		Verifier:         pv,
 	}
 
 	// Test with different message sizes (must be multiples of 8)
@@ -867,7 +909,7 @@ func BenchmarkPedersenEndToEnd(b *testing.B) {
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				// Create encoder
-				encoder, err := rlnc.NewRlncEncoder(rlncConfig)
+				encoder, err := rlnc.NewRlncEncoder(encoderConfig)
 				if err != nil {
 					b.Fatal(err)
 				}
@@ -880,7 +922,7 @@ func BenchmarkPedersenEndToEnd(b *testing.B) {
 				}
 
 				// Create separate encoder for verification
-				verifyEncoder, _ := rlnc.NewRlncEncoder(rlncConfig)
+				verifyEncoder, _ := rlnc.NewRlncEncoder(encoderConfig)
 
 				// Verify all chunks
 				for i := 0; i < numChunks; i++ {

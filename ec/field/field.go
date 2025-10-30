@@ -1,5 +1,7 @@
 package field
 
+import "math/big"
+
 // Element represents an element in a finite field
 type Element interface {
 	// Add returns a + b in the field
@@ -58,4 +60,7 @@ type Field interface {
 
 	// BitsPerElement returns the number of bits per field element
 	BitsPerElement() int
+
+	// Order returns the order (size) of the field
+	Order() *big.Int
 }

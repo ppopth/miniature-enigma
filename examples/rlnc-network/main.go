@@ -68,11 +68,13 @@ func main() {
 
 	// Configure RLNC encoder with optimal parameters
 	rlncConfig := &rlnc.RlncEncoderConfig{
-		MessageChunkSize:   8,  // 8 bytes per message chunk
-		NetworkChunkSize:   9,  // 9 bytes per network chunk
-		ElementsPerChunk:   2,  // 2 field elements per chunk
-		MaxCoefficientBits: 32, // 32-bit coefficients
-		Field:              f,
+		RlncCommonConfig: rlnc.RlncCommonConfig{
+			MessageChunkSize:   8,  // 8 bytes per message chunk
+			NetworkChunkSize:   9,  // 9 bytes per network chunk
+			ElementsPerChunk:   2,  // 2 field elements per chunk
+			MaxCoefficientBits: 32, // 32-bit coefficients
+			Field:              f,
+		},
 	}
 
 	encoder, err := rlnc.NewRlncEncoder(rlncConfig)

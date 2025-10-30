@@ -137,11 +137,13 @@ func main() {
 		messageChunkSize, elementsPerChunk, networkChunkSize)
 
 	rlncConfig := &rlnc.RlncEncoderConfig{
-		MessageChunkSize:   messageChunkSize,
-		NetworkChunkSize:   networkChunkSize,
-		ElementsPerChunk:   elementsPerChunk,
-		MaxCoefficientBits: 32,
-		Field:              f,
+		RlncCommonConfig: rlnc.RlncCommonConfig{
+			MessageChunkSize:   messageChunkSize,
+			NetworkChunkSize:   networkChunkSize,
+			ElementsPerChunk:   elementsPerChunk,
+			MaxCoefficientBits: 32,
+			Field:              f,
+		},
 	}
 	encoder, err := rlnc.NewRlncEncoder(rlncConfig)
 	if err != nil {
