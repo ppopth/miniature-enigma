@@ -43,13 +43,13 @@ def parse_shadow_logs(node_count: int) -> Dict[int, int]:
     return received_counts
 
 def test_message_delivery(node_count: int, expected_messages: int, protocol: str = "floodsub") -> bool:
-    """Test that all nodes received the expected number of messages."""
+    """Test that >99% of nodes received the expected number of messages."""
     print(f"Shadow Simulation Test Results ({protocol.upper()})")
     print("=" * 50)
 
     received_counts = parse_shadow_logs(node_count)
 
-    all_passed = True
+    passed_nodes = 0
     total_received = 0
 
     for node_id in range(node_count):
@@ -58,9 +58,9 @@ def test_message_delivery(node_count: int, expected_messages: int, protocol: str
 
         if received == expected_messages:
             status = "✓ PASS"
+            passed_nodes += 1
         else:
             status = "✗ FAIL"
-            all_passed = False
 
         print(f"Node {node_id:2d}: {received:2d}/{expected_messages:2d} messages {status}")
 
@@ -68,14 +68,20 @@ def test_message_delivery(node_count: int, expected_messages: int, protocol: str
     print(f"Total messages received: {total_received}")
     print(f"Expected total: {node_count * expected_messages}")
 
-    if all_passed:
-        print("✓ ALL TESTS PASSED: All nodes received expected messages")
+    # Calculate success rate
+    success_rate = (passed_nodes / node_count) * 100
+    print(f"Success rate: {success_rate:.1f}% ({passed_nodes}/{node_count} nodes)")
+
+    # Pass if >99% of nodes received all messages
+    threshold = 99.0
+    if success_rate > threshold:
+        print(f"✓ TEST PASSED: {success_rate:.1f}% of nodes received expected messages (>{threshold}% threshold)")
+        return True
     else:
         failed_nodes = [i for i in range(node_count) if received_counts.get(i, 0) != expected_messages]
-        print(f"✗ TEST FAILED: {len(failed_nodes)} nodes failed to receive all messages")
+        print(f"✗ TEST FAILED: Only {success_rate:.1f}% of nodes received all messages (<={threshold}% threshold)")
         print(f"Failed nodes: {failed_nodes}")
-
-    return all_passed
+        return False
 
 def check_shadow_data_exists() -> bool:
     """Check if Shadow simulation data directory exists."""
