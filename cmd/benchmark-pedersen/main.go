@@ -39,7 +39,7 @@ func main() {
 	networkBitsPerElement := f.BitsPerElement()
 
 	// Calculate bytes per element for message and network
-	messageBytesPerElement := messageBitsPerElement / 8 // Round down to stay within field capacity
+	messageBytesPerElement := messageBitsPerElement / 8       // Round down to stay within field capacity
 	networkBytesPerElement := (networkBitsPerElement + 7) / 8 // Round up for network encoding
 
 	// Validate that message chunk size is compatible with bytes per element

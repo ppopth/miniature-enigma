@@ -250,7 +250,7 @@ jobs:
       run: go build -o benchmark-pedersen ./cmd/benchmark-pedersen
 
     - name: Run benchmark (fast mode for CI)
-      run: ./benchmark-pedersen -chunk-size 32 -num-chunks 8 -iterations 10 -output pedersen_benchmark.json
+      run: ./benchmark-pedersen -chunk-size 31 -num-chunks 8 -iterations 10 -output pedersen_benchmark.json
 
     - name: Verify benchmark output
       run: |
@@ -264,7 +264,7 @@ jobs:
     - name: Run RLNC simulation without verifier (baseline)
       run: |
         cd shadow/rlnc
-        make all NODE_COUNT=5 MSG_SIZE=256 MSG_COUNT=1 NUM_CHUNKS=8
+        make all NODE_COUNT=5 MSG_SIZE=248 MSG_COUNT=1 NUM_CHUNKS=8
       timeout-minutes: 10
 
     - name: Run RLNC simulation with ShadowPedersenVerifier
@@ -272,7 +272,7 @@ jobs:
         BENCHMARK_PATH=$(realpath pedersen_benchmark.json)
         cd shadow/rlnc
         make clean
-        make all BENCHMARK_FILE=$BENCHMARK_PATH NODE_COUNT=5 MSG_SIZE=256 MSG_COUNT=1 NUM_CHUNKS=8
+        make all BENCHMARK_FILE=$BENCHMARK_PATH NODE_COUNT=5 MSG_SIZE=248 MSG_COUNT=1 NUM_CHUNKS=8
       timeout-minutes: 10
 
     - name: Verify simulation success
