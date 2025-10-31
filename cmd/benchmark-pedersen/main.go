@@ -33,21 +33,25 @@ func main() {
 	outputFile := flag.String("output", "pedersen_benchmark.json", "Output file for benchmark results")
 	flag.Parse()
 
-	messageBytesPerElement := 32
-	networkBytesPerElement := 33
+	// Create field first to get its BitsPerDataElement
+	f := group.NewScalarField(verify.Ristretto255Group)
+	messageBitsPerElement := f.BitsPerDataElement()
+	networkBitsPerElement := f.BitsPerElement()
+
+	// Calculate bytes per element for message and network
+	messageBytesPerElement := messageBitsPerElement / 8 // Round down to stay within field capacity
+	networkBytesPerElement := (networkBitsPerElement + 7) / 8 // Round up for network encoding
 
 	// Validate that message chunk size is compatible with bytes per element
 	if *messageChunkSize%messageBytesPerElement != 0 {
 		fmt.Fprintf(os.Stderr, "Error: Message chunk size %d must be a multiple of %d bytes per element\n",
 			*messageChunkSize, messageBytesPerElement)
+		fmt.Fprintf(os.Stderr, "Field has %d bits per data element (%d bytes when rounded down)\n",
+			messageBitsPerElement, messageBytesPerElement)
 		os.Exit(1)
 	}
 
 	elementsPerChunk := *messageChunkSize / messageBytesPerElement
-
-	// Calculate bits per element for message and network
-	messageBitsPerElement := 8 * messageBytesPerElement
-	networkBitsPerElement := 8 * networkBytesPerElement
 	networkChunkSize := elementsPerChunk * networkBytesPerElement
 
 	fmt.Printf("Benchmarking PedersenVerifier with:\n")
@@ -67,9 +71,6 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Failed to set ETH mode: %v\n", err)
 		os.Exit(1)
 	}
-
-	// Create field for converting message chunks to network chunks
-	f := group.NewScalarField(verify.Ristretto255Group)
 
 	// Create BLS keys
 	sk := &bls.SecretKey{}
@@ -97,6 +98,18 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Failed to create PedersenVerifier: %v\n", err)
 		os.Exit(1)
 	}
+
+	// Verify the config works with RlncEncoder
+	encoderConfig := &rlnc.RlncEncoderConfig{
+		RlncCommonConfig: *rlncConfig,
+		Verifier:         pv,
+	}
+	_, err = rlnc.NewRlncEncoder(encoderConfig)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to create RlncEncoder with config: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Printf("Successfully created RlncEncoder with PedersenVerifier\n")
 
 	// Create test chunks: generate message chunks and convert to network chunks
 	chunks := make([][]byte, *numChunks)
