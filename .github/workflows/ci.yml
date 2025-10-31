@@ -246,20 +246,40 @@ jobs:
     - name: Download Go dependencies
       run: go mod download
 
-    - name: Build benchmark-pedersen tool
+    - name: Build benchmark-pedersen tool (Go)
       run: go build -o benchmark-pedersen ./cmd/benchmark-pedersen
 
-    - name: Run benchmark (fast mode for CI)
-      run: ./benchmark-pedersen -chunk-size 31 -num-chunks 8 -iterations 10 -output pedersen_benchmark.json
+    - name: Run Go benchmark (fast mode for CI)
+      run: ./benchmark-pedersen -chunk-size 31 -num-chunks 8 -iterations 10 -output pedersen_benchmark_go.json
 
-    - name: Verify benchmark output
+    - name: Build benchmark-pedersen tool (Rust)
       run: |
-        if [ ! -f pedersen_benchmark.json ]; then
-          echo "Error: Benchmark file not created"
+        cd cmd/benchmark-pedersen-rust
+        cargo build --release
+
+    - name: Run Rust benchmark (fast mode for CI)
+      run: ./cmd/benchmark-pedersen-rust/target/release/benchmark-pedersen --chunk-size 32 --num-chunks 8 --iterations 10 --output pedersen_benchmark_rust.json
+
+    - name: Verify Go benchmark output
+      run: |
+        if [ ! -f pedersen_benchmark_go.json ]; then
+          echo "Error: Go benchmark file not created"
           exit 1
         fi
         # Check that the JSON is valid and has expected structure
-        python3 -c "import json; data = json.load(open('pedersen_benchmark.json')); assert data['num_chunks'] == 8; assert data['elements_per_chunk'] == 1; print(f'Benchmark result for {data[\"num_chunks\"]} chunks with {data[\"elements_per_chunk\"]} elements loaded successfully')"
+        python3 -c "import json; data = json.load(open('pedersen_benchmark_go.json')); assert data['num_chunks'] == 8; assert data['elements_per_chunk'] == 1; print(f'Go benchmark: {data[\"num_chunks\"]} chunks with {data[\"elements_per_chunk\"]} elements')"
+
+    - name: Verify Rust benchmark output
+      run: |
+        if [ ! -f pedersen_benchmark_rust.json ]; then
+          echo "Error: Rust benchmark file not created"
+          exit 1
+        fi
+        # Check that the JSON is valid and has expected structure
+        python3 -c "import json; data = json.load(open('pedersen_benchmark_rust.json')); assert data['num_chunks'] == 8; assert data['elements_per_chunk'] == 1; print(f'Rust benchmark: {data[\"num_chunks\"]} chunks with {data[\"elements_per_chunk\"]} elements')"
+
+    - name: Create pedersen_benchmark.json for backward compatibility
+      run: cp pedersen_benchmark_go.json pedersen_benchmark.json
 
     - name: Run RLNC simulation without verifier (baseline)
       run: |
@@ -280,12 +300,14 @@ jobs:
         cd shadow/rlnc
         python3 ../test_results.py 5 1 rlnc
 
-    - name: Upload benchmark file
+    - name: Upload benchmark files
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: pedersen-benchmark
-        path: pedersen_benchmark.json
+        name: pedersen-benchmarks
+        path: |
+          pedersen_benchmark_go.json
+          pedersen_benchmark_rust.json
 
     - name: Upload logs on failure
       if: failure()
